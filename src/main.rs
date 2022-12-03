@@ -10,6 +10,12 @@ use clap::{Arg, ArgMatches, Command};
 use fork::{daemon, Fork};
 use serde_derive::Deserialize;
 
+#[derive(Deserialize)]
+struct DotProfile {
+    start_cmd: Option<String>,
+    config: String,
+}
+
 #[derive(Debug)]
 struct DotFolder {
     name: String,
@@ -29,6 +35,7 @@ struct DotConfig {
     kill: Option<String>,
     reload: Option<String>,
     destination: String,
+    reload_on_set: Option<bool>,
 }
 
 fn main() {
@@ -41,13 +48,19 @@ fn main() {
         fs::create_dir(folder_path).expect("Couldn't create '.dothub' in your $HOME");
     }
 
+    let profiles_path = &folder_path.join("profiles");
+
+    if !profiles_path.exists() {
+        fs::create_dir(profiles_path).expect("Couldn't create 'profiles' in your .dothub .");
+    }
+
     // go through .dothub and initialize all DotFolders with their Dots
     let mut dot_folders: Vec<DotFolder> = vec![];
 
     for dot_folder in fs::read_dir(folder_path).unwrap() {
         let dot_folder = dot_folder.expect("Couldn't read DotFolder.").path();
 
-        if dot_folder.is_dir() {
+        if dot_folder.is_dir() && !dot_folder.ends_with("profiles") {
             dot_folders.push(process_dotfolder(dot_folder));
         }
     }
@@ -75,7 +88,9 @@ fn main() {
     };
 
     //TODO: h, cleanup, somehow
-    let get_config = |dotfolder: &DotFolder, dot: Option<&Dot>| -> DotConfig {
+    let get_active_config = |dot_info: (&DotFolder, Option<&Dot>)| -> DotConfig {
+        let (dotfolder, dot) = dot_info;
+
         if let Some(dot) = dot {
             if let Some(config) = &dot.config {
                 config.clone()
@@ -93,6 +108,7 @@ fn main() {
     match args.subcommand() {
         Some(("set", set_matches)) => {
             let (dotfolder, dot) = get_dot_info_from_args(&set_matches);
+            let config = get_active_config((dotfolder, dot));
             let dot = dot.unwrap();
 
             //TODO: backup old configs
@@ -118,69 +134,110 @@ fn main() {
             } else {
                 panic!("DotFolder has to have a .dothub with at least 'destination' filled!")
             }
-        }
-        Some(("start", start_matches)) => {
-            let (dotfolder, dot) = get_dot_info_from_args(&start_matches);
-            let config = get_config(dotfolder, dot);
 
-            if let Some(start_cmd) = &config.start {
-                if let Ok(Fork::Child) = daemon(false, false) {
-                    process::Command::new("/bin/bash")
-                        .args(["-c", start_cmd])
-                        .output()
-                        .expect("Couldn't start Dot");
-                }
-            } else {
-                panic!("No 'start' command specified in any .dothub .");
+            match config.reload_on_set {
+                Some(x) if x == true => dot_reload(&config),
+                None => dot_reload(&config),
+                _ => {}
             }
         }
-        Some(("kill", start_matches)) => {
-            let (dotfolder, dot) = get_dot_info_from_args(&start_matches);
-            let config = get_config(dotfolder, dot);
-
-            if let Some(kill_cmd) = &config.kill {
-                if let Ok(Fork::Child) = daemon(false, false) {
-                    process::Command::new("/bin/bash")
-                        .args(["-c", kill_cmd])
-                        .output()
-                        .expect("Couldn't kill Dot");
+        Some(("list", _)) => {
+            for df in dot_folders {
+                println!("{}", df.name);
+                for d in df.dots {
+                    println!("\t{}", d.name);
                 }
-            } else {
-                panic!("No 'kill' command specified in any .dothub .");
             }
         }
-        Some(("reload", start_matches)) => {
-            let (dotfolder, dot) = get_dot_info_from_args(&start_matches);
-            let config = get_config(dotfolder, dot);
+        Some(("start", matches)) => {
+            let config = get_active_config(get_dot_info_from_args(&matches));
 
-            if let Some(reload_cmd) = &config.reload {
-                if let Ok(Fork::Child) = daemon(false, false) {
-                    process::Command::new("/bin/bash")
-                        .args(["-c", reload_cmd])
-                        .output()
-                        .expect("Couldn't kill Dot");
-                }
-            } else if let (Some(start_cmd), Some(kill_cmd)) = (&config.start, &config.kill) {
-                if let Ok(Fork::Child) = daemon(false, false) {
-                    process::Command::new("/bin/bash")
-                        .args(["-c", &format!("{} && {}", kill_cmd, start_cmd)])
-                        .output()
-                        .expect("Couldn't kill Dot");
-                }
-            } else {
-                panic!("No 'reload' command specified in any .dothub .");
-            }
+            dot_start(&config);
         }
-        Some(("edit", start_matches)) => {
-            let (dotfolder, dot) = get_dot_info_from_args(&start_matches);
-            let config = get_config(dotfolder, dot);
+        Some(("kill", matches)) => {
+            let config = get_active_config(get_dot_info_from_args(&matches));
+
+            dot_kill(&config);
+        }
+        Some(("reload", matches)) => {
+            let config = get_active_config(get_dot_info_from_args(&matches));
+
+            dot_reload(&config);
+        }
+        Some(("edit", matches)) => {
+            // one day..
+            let config = get_active_config(get_dot_info_from_args(&matches));
 
             process::Command::new(env::var("EDITOR").expect("$EDITOR has to be set!"))
                 .arg(config.destination)
+                .spawn()
+                .expect("Couldn't launch editor.");
+        }
+        // Some(("profile", matches)) => {
+
+        //     match matches.subcommand() {
+        //         Some(("set", pmatches)) => {
+        //             let to_set = pmatches.get_one::<String>("DotProfile").unwrap();
+
+        //             for profile in fs::read_dir(&profiles_path).unwrap() {
+        //                 let profile_path = profile.expect("Couldn't read profile").path();
+
+        //                 if profile_path.ends_with(to_set) {
+        //                     let profile: DotProfile = toml::from_str(&fs::read_to_string(profile_path).unwrap()).expect("Couldn't parse DotProfile.");
+        //                 }
+        //             }
+        //         },
+        //         Some(("list", pmatches)) => {
+
+        //         },
+        //         _ => unreachable!(),
+        //     }
+        // }
+        _ => unreachable!(),
+    }
+}
+
+fn dot_start(config: &DotConfig) {
+    if let Some(start_cmd) = &config.start {
+        if let Ok(Fork::Child) = daemon(false, false) {
+            process::Command::new("/bin/bash")
+                .args(["-c", start_cmd])
+                .output()
+                .expect("Couldn't start Dot");
+        }
+    } else {
+        panic!("No 'start' command specified in any .dothub .");
+    }
+}
+fn dot_kill(config: &DotConfig) {
+    if let Some(kill_cmd) = &config.start {
+        if let Ok(Fork::Child) = daemon(false, false) {
+            process::Command::new("/bin/bash")
+                .args(["-c", kill_cmd])
                 .output()
                 .expect("Couldn't kill Dot");
         }
-        _ => unreachable!(),
+    } else {
+        panic!("No 'kill' command specified in any .dothub .");
+    }
+}
+fn dot_reload(config: &DotConfig) {
+    if let Some(reload_cmd) = &config.reload {
+        if let Ok(Fork::Child) = daemon(false, false) {
+            process::Command::new("/bin/bash")
+                .args(["-c", reload_cmd])
+                .output()
+                .expect("Couldn't reload Dot");
+        }
+    } else if let (Some(start_cmd), Some(kill_cmd)) = (&config.start, &config.kill) {
+        if let Ok(Fork::Child) = daemon(false, false) {
+            process::Command::new("/bin/bash")
+                .args(["-c", &format!("{} && {}", kill_cmd, start_cmd)])
+                .output()
+                .expect("Couldn't reload Dot");
+        }
+    } else {
+        panic!("No 'reload' command specified in any .dothub .");
     }
 }
 
@@ -245,6 +302,10 @@ fn arguments() -> clap::ArgMatches {
                 .arg(Arg::new("Dot").required(true))
         )
         .subcommand(
+            Command::new("list")
+                .about("Lists all the avaiable Dots.")   
+        )
+        .subcommand(
             Command::new("start")
                 .about("Starts a Dot, DotFolder config used if Dot isn't specified, or there is no Dot config.")
                 .arg(Arg::new("DotFolder").required(true))
@@ -262,11 +323,27 @@ fn arguments() -> clap::ArgMatches {
                 .arg(Arg::new("DotFolder").required(true))
                 .arg(Arg::new("Dot"))
         )
+        // .subcommand(
+        //     Command::new("edit")
+        //         .about("Edits a Dot with your $EDITOR.")
+        //         .arg(Arg::new("DotFolder").required(true))
+        //         .arg(Arg::new("Dot"))
+        // )
         .subcommand(
-            Command::new("edit")
-                .about("Edits a Dot with your $EDITOR.")
-                .arg(Arg::new("DotFolder").required(true))
-                .arg(Arg::new("Dot"))
+            Command::new("profile")
+                .about("Profiles")
+                .subcommand_required(true)
+                .arg_required_else_help(true)
+                .subcommand(
+                    Command::new("set")
+                        .about("Sets a profile.")
+                )
+                .subcommand(
+                    Command::new("list")
+                )
+                // .subcommand(
+                //     Command::new("create_from_current")
+                // )
         )
         .get_matches()
 }
