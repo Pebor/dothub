@@ -1,7 +1,7 @@
 use std::{
     env::{self},
-    fs::{self, ReadDir},
-    io::Error,
+    fs,
+    os::unix::fs::symlink,
     path::{Path, PathBuf},
     process,
 };
@@ -109,14 +109,11 @@ fn main() {
 
                 //TODO: use symlinks
                 if conf_path.is_file() {
-                    fs::copy(dot_path, conf_path).expect("Couldn't copy Dot to destination.");
+                    fs::remove_file(conf_path).expect("Coudlnẗ remove old dot file.");
+                    symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
                 } else if conf_path.is_dir() {
-                    delete_dir_contents(fs::read_dir(conf_path));
-
-                    let mut options = fs_extra::dir::CopyOptions::new();
-                    options.content_only = true;
-                    fs_extra::dir::copy(dot_path, conf_path, &options)
-                        .expect("Couldn't copy DotFolder over to destination.");
+                    fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
+                    symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
                 }
             } else {
                 panic!("DotFolder has to have a .dothub with at least 'destination' filled!")
@@ -174,7 +171,7 @@ fn main() {
                 panic!("No 'reload' command specified in any .dothub .");
             }
         }
-        Some(("edit", start_matches)) => { // Later, use symlink arch first
+        Some(("edit", start_matches)) => {
             let (dotfolder, dot) = get_dot_info_from_args(&start_matches);
             let config = get_config(dotfolder, dot);
 
@@ -235,22 +232,6 @@ fn process_dot(path: PathBuf) -> Dot {
     Dot { name, config }
 }
 
-fn delete_dir_contents(read_dir_res: Result<ReadDir, Error>) {
-    if let Ok(dir) = read_dir_res {
-        for entry in dir {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-
-                if path.is_dir() {
-                    fs::remove_dir_all(path).expect("Failed to remove a dir");
-                } else {
-                    fs::remove_file(path).expect("Failed to remove a file");
-                }
-            };
-        }
-    };
-}
-
 fn arguments() -> clap::ArgMatches {
     Command::new("dothub")
         .about("Manage your dofiles from a comfortable hub!")
@@ -278,6 +259,12 @@ fn arguments() -> clap::ArgMatches {
         .subcommand(
             Command::new("reload")
                 .about("Reloads a Dot, DotFolder config used if Dot isn't specified, or there is no Dot config.")
+                .arg(Arg::new("DotFolder").required(true))
+                .arg(Arg::new("Dot"))
+        )
+        .subcommand(
+            Command::new("edit")
+                .about("Edits a Dot with your $EDITOR.")
                 .arg(Arg::new("DotFolder").required(true))
                 .arg(Arg::new("Dot"))
         )
