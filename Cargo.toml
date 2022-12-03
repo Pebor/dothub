@@ -1,0 +1,14 @@
+[package]
+name = "dothub"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = "4.0.29"
+fork = "0.1.20"
+fs_extra = "1.2.0"
+serde = "1.0.148"
+serde_derive = "1.0.148"
+toml = "0.5.9"
