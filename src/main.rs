@@ -41,7 +41,7 @@ fn main() {
         fs::create_dir(folder_path).expect("Couldn't create '.dothub' in your $HOME");
     }
 
-    // go through .dothub and initilaze all DotFolders with their Dots
+    // go through .dothub and initialize all DotFolders with their Dots
     let mut dot_folders: Vec<DotFolder> = vec![];
 
     for dot_folder in fs::read_dir(folder_path).unwrap() {
@@ -89,7 +89,7 @@ fn main() {
 
     // command logic
     let args = arguments();
-    
+
     match args.subcommand() {
         Some(("set", set_matches)) => {
             let (dotfolder, dot) = get_dot_info_from_args(&set_matches);
@@ -253,7 +253,7 @@ fn delete_dir_contents(read_dir_res: Result<ReadDir, Error>) {
 
 fn arguments() -> clap::ArgMatches {
     Command::new("dothub")
-        .about("Manage your dofiles from a confortable hub!")
+        .about("Manage your dofiles from a comfortable hub!")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .author("Yours truly")
