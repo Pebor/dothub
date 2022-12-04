@@ -3,18 +3,18 @@ use std::{
     fs,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    process,
+    process, time::Duration
 };
 
 use clap::{Arg, ArgMatches, Command};
-use fork::{daemon, Fork};
+use notify::{Watcher, PollWatcher, Config};
 use serde_derive::Deserialize;
 
-#[derive(Deserialize)]
-struct DotProfile {
-    start_cmd: Option<String>,
-    config: String,
-}
+// #[derive(Deserialize)]
+// struct DotProfile {
+//     start_cmd: Option<String>,
+//     config: String,
+// }
 
 #[derive(Debug)]
 struct DotFolder {
@@ -123,7 +123,6 @@ fn main() {
                 );
                 let dot_path = Path::new(&dot_path);
 
-                //TODO: use symlinks
                 if conf_path.is_file() {
                     fs::remove_file(conf_path).expect("Coudlnẗ remove old dot file.");
                     symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
@@ -139,6 +138,41 @@ fn main() {
                 Some(x) if x == true => dot_reload(&config),
                 None => dot_reload(&config),
                 _ => {}
+            }
+        }
+        Some(("watch", set_matches)) => {
+            let (dotfolder, dot) = get_dot_info_from_args(&set_matches);
+            let config = get_active_config((dotfolder, dot));
+            let dot = dot.unwrap();
+
+            //TODO: backup old configs
+            if let Some(_) = &dotfolder.config {
+                let dot_path = format!(
+                    "{}/{}/{}",
+                    folder_path.to_str().unwrap(),
+                    dotfolder.name,
+                    dot.name
+                );
+                let dot_path = Path::new(&dot_path);
+
+                let (tx, rx) = std::sync::mpsc::channel();
+
+                let mut watcher = PollWatcher::new(tx, Config::default().with_poll_interval(Duration::from_secs(1))).expect("Couldn't create watcher");
+
+                watcher.watch(&dot_path, notify::RecursiveMode::Recursive).expect("Couldn't add Dot path to watcher.");
+
+                for res in rx {
+                    match res {
+                        Ok(ev) => {
+                            if ev.paths[0].is_file() {
+                                dot_reload(&config.clone());
+                            }
+                        },
+                        Err(e) => println!("watch error: {:?}", e),
+                    }
+                }
+            } else {
+                panic!("DotFolder has to have a .dothub with at least 'destination' filled!")
             }
         }
         Some(("list", _)) => {
@@ -199,43 +233,35 @@ fn main() {
 
 fn dot_start(config: &DotConfig) {
     if let Some(start_cmd) = &config.start {
-        if let Ok(Fork::Child) = daemon(false, false) {
-            process::Command::new("/bin/bash")
-                .args(["-c", start_cmd])
-                .output()
-                .expect("Couldn't start Dot");
-        }
+        process::Command::new("/bin/bash")
+            .args(["-c", start_cmd])
+            .output()
+            .expect("Couldn't start Dot");
     } else {
         panic!("No 'start' command specified in any .dothub .");
     }
 }
 fn dot_kill(config: &DotConfig) {
-    if let Some(kill_cmd) = &config.start {
-        if let Ok(Fork::Child) = daemon(false, false) {
-            process::Command::new("/bin/bash")
-                .args(["-c", kill_cmd])
-                .output()
-                .expect("Couldn't kill Dot");
-        }
+    if let Some(kill_cmd) = &config.kill {
+        process::Command::new("/bin/bash")
+            .args(["-c", kill_cmd])
+            .output()
+            .expect("Couldn't kill Dot");
     } else {
         panic!("No 'kill' command specified in any .dothub .");
     }
 }
 fn dot_reload(config: &DotConfig) {
     if let Some(reload_cmd) = &config.reload {
-        if let Ok(Fork::Child) = daemon(false, false) {
-            process::Command::new("/bin/bash")
-                .args(["-c", reload_cmd])
-                .output()
-                .expect("Couldn't reload Dot");
-        }
+        process::Command::new("/bin/bash")
+            .args(["-c", &reload_cmd])
+            .output()
+            .expect("Couldn't reload Dot");
     } else if let (Some(start_cmd), Some(kill_cmd)) = (&config.start, &config.kill) {
-        if let Ok(Fork::Child) = daemon(false, false) {
-            process::Command::new("/bin/bash")
-                .args(["-c", &format!("{} && {}", kill_cmd, start_cmd)])
-                .output()
-                .expect("Couldn't reload Dot");
-        }
+        process::Command::new("/bin/bash")
+            .args(["-c", &format!("{} && {}", &kill_cmd, &start_cmd)])
+            .output()
+            .expect("Couldn't reload Dot");
     } else {
         panic!("No 'reload' command specified in any .dothub .");
     }
@@ -297,7 +323,13 @@ fn arguments() -> clap::ArgMatches {
         .author("Yours truly")
         .subcommand(
             Command::new("set")
-                .about("Applies (copies) a Dot.")
+                .about("Applies a Dot.")
+                .arg(Arg::new("DotFolder").required(true))
+                .arg(Arg::new("Dot").required(true))
+        )
+        .subcommand(
+            Command::new("watch")
+                .about("Watches a Dot and reloads on a change.")
                 .arg(Arg::new("DotFolder").required(true))
                 .arg(Arg::new("Dot").required(true))
         )
