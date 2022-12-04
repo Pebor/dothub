@@ -3,7 +3,7 @@ use std::{
     fs,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    process, time::Duration, thread::panicking
+    process, time::Duration
 };
 
 use clap::{Arg, ArgMatches, Command};
@@ -87,7 +87,6 @@ fn main() {
         (dotfolder, None)
     };
 
-    //TODO: h, cleanup, somehow
     let get_active_config = |dot_info: (&DotFolder, Option<&Dot>)| -> DotConfig {
         let (dotfolder, dot) = dot_info;
 
@@ -126,13 +125,21 @@ fn main() {
             );
             let dot_path = Path::new(&dot_path);
 
+            if !conf_path.exists() {
+                if let Some(parent_path) = conf_path.parent() {
+                    if !parent_path.exists() {
+                        fs::create_dir_all(parent_path).expect("Couldn't create parent path recursively.");
+                    }
+                }
+            }
+
             if conf_path.is_file() {
-                fs::remove_file(conf_path).expect("Coudlnẗ remove old dot file.");
-                symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
+                fs::remove_file(conf_path).expect("Coudln't remove old dot file.");
             } else if conf_path.is_dir() {
                 fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
-                symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
             }
+            
+            symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
 
             if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
                 match config.reload_on_set {
