@@ -3,7 +3,7 @@ use std::{
     fs,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    process, time::Duration
+    process, time::Duration, thread::panicking
 };
 
 use clap::{Arg, ArgMatches, Command};
@@ -91,6 +91,10 @@ fn main() {
     let get_active_config = |dot_info: (&DotFolder, Option<&Dot>)| -> DotConfig {
         let (dotfolder, dot) = dot_info;
 
+        if dotfolder.config.is_none() {
+            panic!("DotFolder has to have a .dothub with at least 'destination' filled!");
+        }
+
         if let Some(dot) = dot {
             if let Some(config) = &dot.config {
                 config.clone()
@@ -112,26 +116,22 @@ fn main() {
             let dot = dot.unwrap();
 
             //TODO: backup old configs
-            if let Some(conf) = &dotfolder.config {
-                let conf_path = Path::new(&conf.destination);
+            let conf_path = Path::new(&config.destination);
 
-                let dot_path = format!(
-                    "{}/{}/{}",
-                    folder_path.to_str().unwrap(),
-                    dotfolder.name,
-                    dot.name
-                );
-                let dot_path = Path::new(&dot_path);
+            let dot_path = format!(
+                "{}/{}/{}",
+                folder_path.to_str().unwrap(),
+                dotfolder.name,
+                dot.name
+            );
+            let dot_path = Path::new(&dot_path);
 
-                if conf_path.is_file() {
-                    fs::remove_file(conf_path).expect("Coudlnẗ remove old dot file.");
-                    symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
-                } else if conf_path.is_dir() {
-                    fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
-                    symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
-                }
-            } else {
-                panic!("DotFolder has to have a .dothub with at least 'destination' filled!")
+            if conf_path.is_file() {
+                fs::remove_file(conf_path).expect("Coudlnẗ remove old dot file.");
+                symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
+            } else if conf_path.is_dir() {
+                fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
+                symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
             }
 
             if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
