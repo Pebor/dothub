@@ -134,10 +134,12 @@ fn main() {
                 panic!("DotFolder has to have a .dothub with at least 'destination' filled!")
             }
 
-            match config.reload_on_set {
-                Some(x) if x == true => dot_reload(&config),
-                None => dot_reload(&config),
-                _ => {}
+            if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
+                match config.reload_on_set {
+                    Some(x) if x == true => dot_reload(&config),
+                    None => dot_reload(&config),
+                    _ => {}
+                }
             }
         }
         Some(("watch", set_matches)) => {
