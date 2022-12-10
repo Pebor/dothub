@@ -3,11 +3,12 @@ use std::{
     fs,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    process, time::Duration
+    process,
+    time::Duration,
 };
 
 use clap::{Arg, ArgMatches, Command};
-use notify::{Watcher, PollWatcher, Config};
+use notify::{Config, PollWatcher, Watcher};
 use serde_derive::Deserialize;
 
 // #[derive(Deserialize)]
@@ -114,9 +115,7 @@ fn main() {
             let config = get_active_config((dotfolder, dot));
             let dot = dot.unwrap();
 
-            //TODO: backup old configs
             let conf_path = Path::new(&config.destination);
-
             let dot_path = format!(
                 "{}/{}/{}",
                 folder_path.to_str().unwrap(),
@@ -125,29 +124,7 @@ fn main() {
             );
             let dot_path = Path::new(&dot_path);
 
-            if !conf_path.exists() {
-                if let Some(parent_path) = conf_path.parent() {
-                    if !parent_path.exists() {
-                        fs::create_dir_all(parent_path).expect("Couldn't create parent path recursively.");
-                    }
-                }
-            }
-
-            if conf_path.is_file() {
-                fs::remove_file(conf_path).expect("Coudln't remove old dot file.");
-            } else if conf_path.is_dir() {
-                fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
-            }
-            
-            symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
-
-            if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
-                match config.reload_on_set {
-                    Some(x) if x == true => dot_reload(&config),
-                    None => dot_reload(&config),
-                    _ => {}
-                }
-            }
+            dot_set(&config, &dot_path, &conf_path);
         }
         Some(("watch", set_matches)) => {
             let (dotfolder, dot) = get_dot_info_from_args(&set_matches);
@@ -156,6 +133,7 @@ fn main() {
 
             //TODO: backup old configs
             if let Some(_) = &dotfolder.config {
+                let conf_path = Path::new(&config.destination);
                 let dot_path = format!(
                     "{}/{}/{}",
                     folder_path.to_str().unwrap(),
@@ -164,11 +142,19 @@ fn main() {
                 );
                 let dot_path = Path::new(&dot_path);
 
+                dot_set(&config, &dot_path, &conf_path);
+
                 let (tx, rx) = std::sync::mpsc::channel();
 
-                let mut watcher = PollWatcher::new(tx, Config::default().with_poll_interval(Duration::from_secs(1))).expect("Couldn't create watcher");
+                let mut watcher = PollWatcher::new(
+                    tx,
+                    Config::default().with_poll_interval(Duration::from_secs(1)),
+                )
+                .expect("Couldn't create watcher");
 
-                watcher.watch(&dot_path, notify::RecursiveMode::Recursive).expect("Couldn't add Dot path to watcher.");
+                watcher
+                    .watch(&dot_path, notify::RecursiveMode::Recursive)
+                    .expect("Couldn't add Dot path to watcher.");
 
                 for res in rx {
                     match res {
@@ -176,7 +162,7 @@ fn main() {
                             if ev.paths[0].is_file() {
                                 dot_reload(&config.clone());
                             }
-                        },
+                        }
                         Err(e) => println!("watch error: {:?}", e),
                     }
                 }
@@ -240,6 +226,31 @@ fn main() {
     }
 }
 
+fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) {
+    if !conf_path.exists() {
+        if let Some(parent_path) = conf_path.parent() {
+            if !parent_path.exists() {
+                fs::create_dir_all(parent_path).expect("Couldn't create parent path recursively.");
+            }
+        }
+    }
+
+    if conf_path.is_file() {
+        fs::remove_file(conf_path).expect("Coudln't remove old dot file.");
+    } else if conf_path.is_dir() {
+        fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
+    }
+
+    symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
+
+    if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
+        match config.reload_on_set {
+            Some(x) if x == true => dot_reload(&config),
+            None => dot_reload(&config),
+            _ => {}
+        }
+    }
+}
 fn dot_start(config: &DotConfig) {
     if let Some(start_cmd) = &config.start {
         process::Command::new("/bin/bash")
