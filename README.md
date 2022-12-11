@@ -30,7 +30,7 @@ waybar/
 ```
 In `waybar/.dothub'
 ```
-start = 'hyprctl dispatch exec waybar'
+start = 'dothub run waybar'
 kill = 'pkill waybar'
 destination = '~/.config/waybar'
 ```
