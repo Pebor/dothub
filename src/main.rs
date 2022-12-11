@@ -1,3 +1,6 @@
+use exec;
+use fork::{daemon, Fork};
+// use fork::Fork;
 use std::{
     collections::HashMap,
     env, fs,
@@ -241,10 +244,14 @@ fn main() {
             // one day..
             let config = get_active_config(get_dot_info_from_args(&matches));
 
-            process::Command::new(env::var("EDITOR").expect("$EDITOR has to be set!"))
+            let _ = exec::Command::new(env::var("EDITOR").expect("$EDITOR has to be set!"))
                 .arg(config.destination)
-                .spawn()
-                .expect("Couldn't launch editor.");
+                .exec();
+        }
+        Some(("run", matches)) => {
+            let prog = matches.get_one("Program").unwrap();
+
+            run(prog);
         }
         Some(("profile", matches)) => match matches.subcommand() {
             Some(("set", pmatches)) => {
@@ -314,19 +321,32 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) {
         }
     }
 }
+fn run(prog: &String) {
+    if let Ok(Fork::Child) = daemon(false, false) {
+        let _ = exec::Command::new("sh").args(&["-c", prog]).exec();
+    }
+}
 fn dot_start(config: &DotConfig) {
     if let Some(start_cmd) = &config.start {
-        process::Command::new("/bin/bash")
-            .args(["-c", start_cmd])
-            .output()
-            .expect("Couldn't start Dot");
-    } else {
-        panic!("No 'start' command specified in any .dothub .");
+        run(start_cmd);
     }
+    //     match unsafe { fork() } {
+    //         Ok(ForkResult::Parent { child: _ }) => {
+    //             exit(0);
+    //         }
+    //         Ok(ForkResult::Child) => {
+    //             setsid().unwrap();
+    //             exec::Command::new("sh").args(&["-c", start_cmd]).exec();
+    //         }
+    //         Err(e) => panic!("Couldn't fork."),
+    //     }
+    // } else {
+    //     panic!("No 'start' command specified in any .dothub .");
+    // }
 }
 fn dot_kill(config: &DotConfig) {
     if let Some(kill_cmd) = &config.kill {
-        process::Command::new("/bin/bash")
+        process::Command::new("sh")
             .args(["-c", kill_cmd])
             .output()
             .expect("Couldn't kill Dot");
@@ -336,12 +356,12 @@ fn dot_kill(config: &DotConfig) {
 }
 fn dot_reload(config: &DotConfig) {
     if let Some(reload_cmd) = &config.reload {
-        process::Command::new("/bin/bash")
+        process::Command::new("sh")
             .args(["-c", &reload_cmd])
             .output()
             .expect("Couldn't reload Dot");
     } else if let (Some(start_cmd), Some(kill_cmd)) = (&config.start, &config.kill) {
-        process::Command::new("/bin/bash")
+        process::Command::new("sh")
             .args(["-c", &format!("{} && {}", &kill_cmd, &start_cmd)])
             .output()
             .expect("Couldn't reload Dot");
@@ -461,12 +481,17 @@ fn arguments() -> clap::ArgMatches {
                 .arg(Arg::new("DotFolder").required(true))
                 .arg(Arg::new("Dot"))
         )
-        // .subcommand(
-        //     Command::new("edit")
-        //         .about("Edits a Dot with your $EDITOR.")
-        //         .arg(Arg::new("DotFolder").required(true))
-        //         .arg(Arg::new("Dot"))
-        // )
+        .subcommand(
+            Command::new("run")
+                .about("Runs a program as a daemon, aka, doesn't halt output.")
+                .arg(Arg::new("Program").required(true))
+        )
+        .subcommand(
+            Command::new("edit")
+                .about("Edits a Dot with your $EDITOR.")
+                .arg(Arg::new("DotFolder").required(true))
+                .arg(Arg::new("Dot"))
+        )
         .subcommand(
             Command::new("profile")
                 .about("Profiles")
