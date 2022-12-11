@@ -1,6 +1,6 @@
 use std::{
-    env::{self},
-    fs,
+    collections::HashMap,
+    env, fs,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
     process,
@@ -11,11 +11,18 @@ use clap::{Arg, ArgMatches, Command};
 use notify::{Config, PollWatcher, Watcher};
 use serde_derive::Deserialize;
 
-// #[derive(Deserialize)]
-// struct DotProfile {
-//     start_cmd: Option<String>,
-//     config: String,
-// }
+#[derive(Debug)]
+struct DotProfile {
+    name: String,
+    start: Option<Vec<String>>,
+    dots: HashMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DotProfileParsable {
+    start: Option<Vec<String>>,
+    dots: HashMap<String, String>,
+}
 
 #[derive(Debug)]
 struct DotFolder {
@@ -55,6 +62,17 @@ fn main() {
         fs::create_dir(profiles_path).expect("Couldn't create 'profiles' in your .dothub .");
     }
 
+    // go through .dothub/profiles and initialize all DotProfiles
+    let mut profiles: Vec<DotProfile> = vec![];
+
+    for profile_file in fs::read_dir(profiles_path).unwrap() {
+        let profile_file = profile_file.expect("Couldn't read DotProfile").path();
+
+        if profile_file.is_file() {
+            profiles.push(process_dotprofile(profile_file));
+        }
+    }
+
     // go through .dothub and initialize all DotFolders with their Dots
     let mut dot_folders: Vec<DotFolder> = vec![];
 
@@ -62,7 +80,7 @@ fn main() {
         let dot_folder = dot_folder.expect("Couldn't read DotFolder.").path();
 
         if dot_folder.is_dir() && !dot_folder.ends_with("profiles") {
-            dot_folders.push(process_dotfolder(dot_folder));
+            dot_folders.push(process_dotfolder(&dot_folder));
         }
     }
 
@@ -106,7 +124,7 @@ fn main() {
         }
     };
 
-    // command logic
+    // commands
     let args = arguments();
 
     match args.subcommand() {
@@ -131,7 +149,6 @@ fn main() {
             let config = get_active_config((dotfolder, dot));
             let dot = dot.unwrap();
 
-            //TODO: backup old configs
             if let Some(_) = &dotfolder.config {
                 let conf_path = Path::new(&config.destination);
                 let dot_path = format!(
@@ -202,26 +219,45 @@ fn main() {
                 .spawn()
                 .expect("Couldn't launch editor.");
         }
-        // Some(("profile", matches)) => {
+        Some(("profile", matches)) => match matches.subcommand() {
+            Some(("set", pmatches)) => {
+                let to_set = pmatches.get_one::<String>("DotProfile").unwrap();
 
-        //     match matches.subcommand() {
-        //         Some(("set", pmatches)) => {
-        //             let to_set = pmatches.get_one::<String>("DotProfile").unwrap();
+                let profile = profiles
+                    .iter()
+                    .find(|dp| &dp.name == to_set)
+                    .expect("DotProfile doesn't exist!");
 
-        //             for profile in fs::read_dir(&profiles_path).unwrap() {
-        //                 let profile_path = profile.expect("Couldn't read profile").path();
+                // run profile on_start commands
+                if let Some(start) = &profile.start {
+                    for cmd in start {
+                        process::Command::new("/usr/bin/bash")
+                            .args(["-c", &cmd])
+                            .output()
+                            .expect("Couldn't run command '{cmd}'");
+                    }
+                }
 
-        //                 if profile_path.ends_with(to_set) {
-        //                     let profile: DotProfile = toml::from_str(&fs::read_to_string(profile_path).unwrap()).expect("Couldn't parse DotProfile.");
-        //                 }
-        //             }
-        //         },
-        //         Some(("list", pmatches)) => {
+                // set all dots from dotprofile
+                for (df, dt) in profile.dots.iter() {
+                    let dotfolder_path = folder_path.join(df);
+                    let dot_path = dotfolder_path.join(dt);
 
-        //         },
-        //         _ => unreachable!(),
-        //     }
-        // }
+                    let dotfolder = process_dotfolder(&dotfolder_path);
+                    let dot = process_dot(&dot_path);
+                    let config = get_active_config((&dotfolder, Some(&dot)));
+                    let conf_path = Path::new(&config.destination);
+
+                    dot_set(&config, &dot_path, &conf_path);
+                }
+            }
+            Some(("list", _)) => {
+                for dp in profiles {
+                    println!("{}", dp.name);
+                }
+            }
+            _ => unreachable!(),
+        },
         _ => unreachable!(),
     }
 }
@@ -287,9 +323,28 @@ fn dot_reload(config: &DotConfig) {
     }
 }
 
-fn process_dotfolder(path: PathBuf) -> DotFolder {
+fn process_dotprofile(path: PathBuf) -> DotProfile {
+    let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+
+    let profile_contents = fs::read_to_string(&path).expect("Couldn't read DotProfile.");
+
+    let parsed: DotProfileParsable =
+        toml::from_str(&profile_contents).expect("Couldn't parse a DotProfile.");
+
+    DotProfile {
+        name,
+        start: parsed.start,
+        dots: parsed.dots,
+    }
+}
+
+fn process_dotfolder(path: &PathBuf) -> DotFolder {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let mut config: Option<DotConfig> = None;
+
+    if !path.exists() {
+        panic!("DotFolder '{}' doesn't exist!", name);
+    }
 
     let dots_paths = path.read_dir().unwrap();
     let dots: Vec<Dot> = dots_paths
@@ -298,7 +353,7 @@ fn process_dotfolder(path: PathBuf) -> DotFolder {
             let dot_path_name = dot_path.file_name().unwrap().to_str().unwrap();
 
             if dot_path.is_dir() {
-                return Some(process_dot(dot_path));
+                return Some(process_dot(&dot_path));
             } else if dot_path.is_file() && dot_path_name == ".dothub" {
                 let config_file = fs::read_to_string(dot_path)
                     .expect("Couldn't read .dothub .")
@@ -313,9 +368,13 @@ fn process_dotfolder(path: PathBuf) -> DotFolder {
     DotFolder { name, dots, config }
 }
 
-fn process_dot(path: PathBuf) -> Dot {
+fn process_dot(path: &PathBuf) -> Dot {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let mut config: Option<DotConfig> = None;
+
+    if !path.exists() {
+        panic!("Dot '{}' doesn't exist!", name);
+    }
 
     let dots_files = path.read_dir().unwrap();
     for dot_path in dots_files {
@@ -389,6 +448,7 @@ fn arguments() -> clap::ArgMatches {
                 .subcommand(
                     Command::new("set")
                         .about("Sets a profile.")
+                        .arg(Arg::new("DotProfile").required(true))
                 )
                 .subcommand(
                     Command::new("list")
