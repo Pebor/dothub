@@ -1,6 +1,5 @@
 use exec;
 use fork::{daemon, Fork};
-// use fork::Fork;
 use std::{
     collections::HashMap,
     env, fs,
@@ -191,6 +190,7 @@ fn main() {
 
                 dot_set(&config, &dot_path, &conf_path);
 
+                // watch for directory changes (writes, moves, etc..)
                 let (tx, rx) = std::sync::mpsc::channel();
 
                 let mut watcher = PollWatcher::new(
@@ -240,13 +240,10 @@ fn main() {
 
             dot_reload(&config);
         }
-        Some(("edit", matches)) => {
-            // one day..
-            let config = get_active_config(get_dot_info_from_args(&matches));
+        Some(("edit", _)) => {
+            let editor = env::var("EDITOR").expect("$EDITOR has to be set!");
 
-            let _ = exec::Command::new(env::var("EDITOR").expect("$EDITOR has to be set!"))
-                .arg(config.destination)
-                .exec();
+            run(&editor);
         }
         Some(("run", matches)) => {
             let prog = matches.get_one("Program").unwrap();
@@ -321,6 +318,7 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) {
         }
     }
 }
+// run a program, make it a daemon, exit
 fn run(prog: &String) {
     if let Ok(Fork::Child) = daemon(false, false) {
         let _ = exec::Command::new("sh").args(&["-c", prog]).exec();
@@ -330,6 +328,9 @@ fn dot_start(config: &DotConfig) {
     if let Some(start_cmd) = &config.start {
         run(start_cmd);
     }
+
+    // will keep this here for now..
+
     //     match unsafe { fork() } {
     //         Ok(ForkResult::Parent { child: _ }) => {
     //             exit(0);
