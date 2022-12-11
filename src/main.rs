@@ -11,6 +11,16 @@ use clap::{Arg, ArgMatches, Command};
 use notify::{Config, PollWatcher, Watcher};
 use serde_derive::Deserialize;
 
+macro_rules! get_dot_or_df_opt {
+    ($dot_conf:ident,$df_conf:ident,$var:ident) => {
+        if let Some(x) = &$dot_conf.$var {
+            Some(x.clone())
+        } else {
+            $df_conf.$var.clone()
+        }
+    };
+}
+
 #[derive(Debug)]
 struct DotProfile {
     name: String,
@@ -113,9 +123,20 @@ fn main() {
             panic!("DotFolder has to have a .dothub with at least 'destination' filled!");
         }
 
+        // for the love of god, rewrite this
+        // also two structs dotFolderConfig, dotConfig, dumbass
         if let Some(dot) = dot {
             if let Some(config) = &dot.config {
-                config.clone()
+                // merge
+                let df_config = dotfolder.config.as_ref().unwrap();
+
+                DotConfig {
+                    start: { get_dot_or_df_opt!(config, df_config, start) },
+                    kill: { get_dot_or_df_opt!(config, df_config, kill) },
+                    reload: { get_dot_or_df_opt!(config, df_config, reload) },
+                    destination: { todo!() },
+                    reload_on_set: { get_dot_or_df_opt!(config, df_config, reload_on_set) },
+                }
             } else {
                 dotfolder.config.as_ref().expect("yes").clone()
             }
