@@ -134,7 +134,13 @@ fn main() {
                     start: { get_dot_or_df_opt!(config, df_config, start) },
                     kill: { get_dot_or_df_opt!(config, df_config, kill) },
                     reload: { get_dot_or_df_opt!(config, df_config, reload) },
-                    destination: { todo!() },
+                    destination: {
+                        if config.destination.is_empty() {
+                            df_config.destination.clone()
+                        } else {
+                            config.destination.clone()
+                        }
+                    },
                     reload_on_set: { get_dot_or_df_opt!(config, df_config, reload_on_set) },
                 }
             } else {
