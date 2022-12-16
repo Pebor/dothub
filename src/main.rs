@@ -219,7 +219,7 @@ fn main() {
         }
         Some(("list", _)) => {
             for df in dot_folders {
-                println!("{}", df.name);
+                println!("{}/", df.name);
                 for d in df.dots {
                     println!("\t{}", d.name);
                 }
@@ -451,14 +451,16 @@ fn arguments() -> clap::ArgMatches {
         .subcommand(
             Command::new("set")
                 .about("Applies a Dot.")
-                .arg(Arg::new("DotFolder").required(true))
-                .arg(Arg::new("Dot").required(true))
+                .arg(Arg::new("Dot location")
+                    .help("Dotfolder/Dot, example 'waybar/neon'.")
+                    .required(true))
         )
         .subcommand(
             Command::new("watch")
                 .about("Watches a Dot and reloads on a change.")
-                .arg(Arg::new("DotFolder").required(true))
-                .arg(Arg::new("Dot").required(true))
+                .arg(Arg::new("Dot location")
+                    .help("Dotfolder/Dot, example 'waybar/neon'.")
+                    .required(true))
         )
         .subcommand(
             Command::new("list")
@@ -466,7 +468,7 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("start")
-                .about("Starts a Dot, DotFolder config used if Dot isn't specified, or there is no Dot config.")
+                .about("Starts a Dot, DotFolder config used if Dot isn't specified, or there is no Dot config")
                 .arg(Arg::new("DotFolder").required(true))
                 .arg(Arg::new("Dot"))
         )
@@ -493,6 +495,10 @@ fn arguments() -> clap::ArgMatches {
                 .arg(Arg::new("DotFolder").required(true))
                 .arg(Arg::new("Dot"))
         )
+        // .subcommand(
+        //     Command::new("get")
+        //         .about("'Gets' a local/git folder.")
+        // )
         .subcommand(
             Command::new("profile")
                 .about("Profiles")
