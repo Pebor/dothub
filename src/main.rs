@@ -98,8 +98,20 @@ fn main() {
 
     // helper functions
     let get_dot_info_from_args = |args: &ArgMatches| -> (&DotFolder, Option<&Dot>) {
-        let dotfolder_arg = args.get_one::<String>("DotFolder").unwrap();
-        let dot_arg = args.get_one::<String>("Dot");
+        let (mut dotfolder_arg, mut dot_arg) = (None, None);
+
+        let location = args.get_one::<String>("location").unwrap();
+
+        if let Some((df_arg, d_arg)) = location.split_once('/') {
+            dotfolder_arg = Some(df_arg);
+            if !d_arg.is_empty() {
+                dot_arg = Some(d_arg);
+            }
+        } else {
+            dotfolder_arg = Some(location);
+        }
+
+        let dotfolder_arg = dotfolder_arg.unwrap();
 
         let dotfolder = match dot_folders.iter().find(|df| &df.name == dotfolder_arg) {
             Some(df) => df,
@@ -451,14 +463,14 @@ fn arguments() -> clap::ArgMatches {
         .subcommand(
             Command::new("set")
                 .about("Applies a Dot.")
-                .arg(Arg::new("Dot location")
+                .arg(Arg::new("location")
                     .help("Dotfolder/Dot, example 'waybar/neon'.")
                     .required(true))
         )
         .subcommand(
             Command::new("watch")
                 .about("Watches a Dot and reloads on a change.")
-                .arg(Arg::new("Dot location")
+                .arg(Arg::new("location")
                     .help("Dotfolder/Dot, example 'waybar/neon'.")
                     .required(true))
         )
@@ -468,32 +480,28 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("start")
-                .about("Starts a Dot, DotFolder config used if Dot isn't specified, or there is no Dot config")
-                .arg(Arg::new("DotFolder").required(true))
-                .arg(Arg::new("Dot"))
+                .about("Runs the 'start' command. DotFolder config used if Dot isn't specified, or there is no Dot config")
+                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
         )
         .subcommand(
             Command::new("kill")
-                .about("Kills a Dot, DotFolder config used if Dot isn't specified, or there is no Dot config.")
-                .arg(Arg::new("DotFolder").required(true))
-                .arg(Arg::new("Dot"))
+                .about("Runs the 'kill' command. DotFolder config used if Dot isn't specified, or there is no Dot config")
+                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
         )
         .subcommand(
             Command::new("reload")
-                .about("Reloads a Dot, DotFolder config used if Dot isn't specified, or there is no Dot config.")
-                .arg(Arg::new("DotFolder").required(true))
-                .arg(Arg::new("Dot"))
+                .about("Runs the 'reload' command. DotFolder config used if Dot isn't specified, or there is no Dot config")
+                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
         )
         .subcommand(
             Command::new("run")
-                .about("Runs a program as a daemon, aka, doesn't halt output.")
+                .about("Runs a program, forked, with a different PID.")
                 .arg(Arg::new("Program").required(true))
         )
         .subcommand(
             Command::new("edit")
                 .about("Edits a Dot with your $EDITOR.")
-                .arg(Arg::new("DotFolder").required(true))
-                .arg(Arg::new("Dot"))
+                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
         )
         // .subcommand(
         //     Command::new("get")
