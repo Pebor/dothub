@@ -310,33 +310,36 @@ Existent 'Dots' are gonna be ereased.\n"
                     if let Some((_, d)) = buf.split_once('/') {
                         let final_destination = folder_path.join(buf);
 
-                        if !d.is_empty() && final_destination.exists() {
-                            let mut user_choice = "".to_string();
+                        if !d.is_empty() {
+                            if final_destination.exists() {
+                                let mut user_choice = "".to_string();
 
-                            loop {
-                                print!(
-                                    "'{}' already exists, do you want to replace it? [y/n]: ",
-                                    buf
-                                );
+                                loop {
+                                    print!(
+                                        "'{}' already exists, do you want to replace it? [y/n]: ",
+                                        buf
+                                    );
 
-                                user_choice.clear();
-                                io::stdout()
-                                    .flush()
-                                    .expect("Flush broken, try a different toilet.");
-                                io::stdin()
-                                    .read_line(&mut user_choice)
-                                    .expect("Reading from stdin failed.");
+                                    user_choice.clear();
+                                    io::stdout()
+                                        .flush()
+                                        .expect("Flush broken, try a different toilet.");
+                                    io::stdin()
+                                        .read_line(&mut user_choice)
+                                        .expect("Reading from stdin failed.");
 
-                                if let Some(choice) = user_choice.to_lowercase().chars().nth(0) {
-                                    match choice {
-                                        'y' => {
-                                            fs::remove_dir_all(&final_destination).unwrap();
-                                            break;
+                                    if let Some(choice) = user_choice.to_lowercase().chars().nth(0)
+                                    {
+                                        match choice {
+                                            'y' => {
+                                                fs::remove_dir_all(&final_destination).unwrap();
+                                                break;
+                                            }
+                                            'n' => {
+                                                break 'main;
+                                            }
+                                            _ => {}
                                         }
-                                        'n' => {
-                                            break 'main;
-                                        }
-                                        _ => {}
                                     }
                                 }
                             }
