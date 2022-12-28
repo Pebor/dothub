@@ -4,4 +4,4 @@ build:
 	cargo build --release
 
 install: build
-	install -Dm755 target/release/dothub /usr/bin/
+	sudo install -Dm755 target/release/dothub /usr/bin/
