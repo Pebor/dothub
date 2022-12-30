@@ -35,4 +35,4 @@ kill = 'pkill waybar'
 destination = '~/.config/waybar'
 ```
 To apply a Dot:
-`dothub set waybar neon`
+`dothub set waybar/neon`
