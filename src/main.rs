@@ -10,7 +10,8 @@ use std::{
     time::Duration,
 };
 
-use clap::{Arg, ArgMatches, Command};
+use anyhow::{bail, Context, Result};
+use clap::{Arg, Command};
 use notify::{Config, PollWatcher, Watcher};
 use serde_derive::Deserialize;
 
@@ -59,20 +60,20 @@ struct DotConfig {
     reload_on_set: Option<bool>,
 }
 
-fn main() {
+fn main() -> Result<()> {
     // check if $HOME/.dothub exists, if not, create one
-    let user_home = env::var("HOME").expect("No $HOME set!");
+    let user_home = env::var("HOME").context("No $HOME set!")?;
     let folder_path = user_home.clone() + "/.dothub";
     let folder_path = Path::new(&folder_path);
 
     if !folder_path.exists() {
-        fs::create_dir(folder_path).expect("Couldn't create '.dothub' in your $HOME");
+        fs::create_dir(folder_path).context("Couldn't create '.dothub' in your $HOME")?;
     }
 
     let profiles_path = &folder_path.join("profiles");
 
     if !profiles_path.exists() {
-        fs::create_dir(profiles_path).expect("Couldn't create 'profiles' in your .dothub .");
+        fs::create_dir(profiles_path).context("Couldn't create 'profiles' in your .dothub .")?;
     }
 
     // go through .dothub/profiles and initialize all DotProfiles
@@ -82,7 +83,7 @@ fn main() {
         let profile_file = profile_file.expect("Couldn't read DotProfile").path();
 
         if profile_file.is_file() {
-            profiles.push(process_dotprofile(profile_file));
+            profiles.push(process_dotprofile(profile_file)?);
         }
     }
 
@@ -93,12 +94,12 @@ fn main() {
         let dot_folder = dot_folder.expect("Couldn't read DotFolder.").path();
 
         if dot_folder.is_dir() && !dot_folder.ends_with("profiles") {
-            dot_folders.push(process_dotfolder(&dot_folder));
+            dot_folders.push(process_dotfolder(&dot_folder)?);
         }
     }
 
     // helper functions
-    let get_dot_info_from_arg = |arg: &String| -> (&DotFolder, Option<&Dot>) {
+    let get_dot_info_from_arg = |arg: &String| -> Result<(&DotFolder, Option<&Dot>)> {
         let (mut dotfolder_arg, mut dot_arg) = (None, None);
 
         let location = arg;
@@ -114,28 +115,29 @@ fn main() {
 
         let dotfolder_arg = dotfolder_arg.unwrap();
 
-        let dotfolder = match dot_folders.iter().find(|df| &df.name == dotfolder_arg) {
-            Some(df) => df,
-            None => panic!("No DotFolder named '{}'", &dotfolder_arg),
-        };
+        let dotfolder = dot_folders
+            .iter()
+            .find(|df| &df.name == dotfolder_arg)
+            .with_context(|| format!("No Dotfolder named '{}'", &dotfolder_arg))?;
 
         if let Some(dot_arg) = dot_arg {
-            let dot = match dotfolder.dots.iter().find(|d| &d.name == dot_arg) {
-                Some(d) => d,
-                None => panic!("No Dot named '{}'", &dot_arg),
-            };
+            let dot = dotfolder
+                .dots
+                .iter()
+                .find(|d| &d.name == dot_arg)
+                .with_context(|| format!("No Dot named '{}'", &dot_arg))?;
 
-            return (dotfolder, Some(dot));
+            return Ok((dotfolder, Some(dot)));
         }
 
-        (dotfolder, None)
+        Ok((dotfolder, None))
     };
 
-    let get_active_config = |dot_info: (&DotFolder, Option<&Dot>)| -> DotConfig {
+    let get_active_config = |dot_info: (&DotFolder, Option<&Dot>)| -> Result<DotConfig> {
         let (dotfolder, dot) = dot_info;
 
         if dotfolder.config.is_none() {
-            panic!("DotFolder has to have a .dothub with at least 'destination' filled!");
+            bail!("DotFolder has to have a .dothub with at least 'destination' filled!");
         }
 
         // for the love of god, rewrite this
@@ -145,7 +147,7 @@ fn main() {
                 // merge
                 let df_config = dotfolder.config.as_ref().unwrap();
 
-                DotConfig {
+                Ok(DotConfig {
                     start: { get_dot_or_df_opt!(config, df_config, start) },
                     kill: { get_dot_or_df_opt!(config, df_config, kill) },
                     reload: { get_dot_or_df_opt!(config, df_config, reload) },
@@ -157,12 +159,12 @@ fn main() {
                         }
                     },
                     reload_on_set: { get_dot_or_df_opt!(config, df_config, reload_on_set) },
-                }
+                })
             } else {
-                dotfolder.config.as_ref().expect("yes").clone()
+                Ok(dotfolder.config.as_ref().expect("yes").clone())
             }
         } else {
-            dotfolder.config.as_ref().expect("yes").clone()
+            Ok(dotfolder.config.as_ref().expect("yes").clone())
         }
     };
 
@@ -172,8 +174,8 @@ fn main() {
     match args.subcommand() {
         Some(("set", set_matches)) => {
             let (dotfolder, dot) =
-                get_dot_info_from_arg(&set_matches.get_one::<String>("location").unwrap());
-            let config = get_active_config((dotfolder, dot));
+                get_dot_info_from_arg(&set_matches.get_one::<String>("location").unwrap())?;
+            let config = get_active_config((dotfolder, dot))?;
             let dot = dot.unwrap();
 
             let conf_path = Path::new(&config.destination);
@@ -185,12 +187,12 @@ fn main() {
             );
             let dot_path = Path::new(&dot_path);
 
-            dot_set(&config, &dot_path, &conf_path);
+            dot_set(&config, &dot_path, &conf_path)?;
         }
         Some(("watch", set_matches)) => {
             let (dotfolder, dot) =
-                get_dot_info_from_arg(&set_matches.get_one::<String>("location").unwrap());
-            let config = get_active_config((dotfolder, dot));
+                get_dot_info_from_arg(&set_matches.get_one::<String>("location").unwrap())?;
+            let config = get_active_config((dotfolder, dot))?;
             let dot = dot.unwrap();
 
             if let Some(_) = &dotfolder.config {
@@ -203,7 +205,7 @@ fn main() {
                 );
                 let dot_path = Path::new(&dot_path);
 
-                dot_set(&config, &dot_path, &conf_path);
+                dot_set(&config, &dot_path, &conf_path)?;
 
                 // watch for directory changes (writes, moves, etc..)
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -222,14 +224,14 @@ fn main() {
                     match res {
                         Ok(ev) => {
                             if ev.paths[0].is_file() {
-                                dot_reload(&config.clone());
+                                dot_reload(&config.clone())?;
                             }
                         }
                         Err(e) => println!("watch error: {:?}", e),
                     }
                 }
             } else {
-                panic!("DotFolder has to have a .dothub with at least 'destination' filled!")
+                bail!("DotFolder has to have a .dothub with at least 'destination' filled!")
             }
         }
         Some(("list", _)) => {
@@ -243,26 +245,26 @@ fn main() {
         Some(("start", matches)) => {
             let config = get_active_config(get_dot_info_from_arg(
                 &matches.get_one::<String>("location").unwrap(),
-            ));
+            )?)?;
 
-            dot_start(&config);
+            dot_start(&config)?;
         }
         Some(("kill", matches)) => {
             let config = get_active_config(get_dot_info_from_arg(
                 &matches.get_one::<String>("location").unwrap(),
-            ));
+            )?)?;
 
-            dot_kill(&config);
+            dot_kill(&config)?;
         }
         Some(("reload", matches)) => {
             let config = get_active_config(get_dot_info_from_arg(
                 &matches.get_one::<String>("location").unwrap(),
-            ));
+            )?)?;
 
-            dot_reload(&config);
+            dot_reload(&config)?;
         }
         Some(("edit", _)) => {
-            let editor = env::var("EDITOR").expect("$EDITOR has to be set!");
+            let editor = env::var("EDITOR").context("$EDITOR has to be set!")?;
 
             run(&editor);
         }
@@ -271,7 +273,9 @@ fn main() {
 
             run(prog);
         }
+        // this one is painfull to look at
         Some(("get", matches)) => {
+            // check if all paths given are valid
             let paths = matches
                 .get_many::<String>("paths")
                 .unwrap()
@@ -291,6 +295,7 @@ Nonexsitent folders are gonna be created.
 Existent 'Dots' are gonna be ereased.\n"
             );
 
+            // for each path arg, input it's .dothub location
             paths.for_each(|p| {
                 let mut buf = "".to_string();
 
@@ -305,8 +310,10 @@ Existent 'Dots' are gonna be ereased.\n"
                         .read_line(&mut buf)
                         .expect("Reading from stdin failed.");
 
+                    // trim the leading '\n'
                     let buf = buf.trim();
 
+                    // this shit is unreadable
                     if let Some((_, d)) = buf.split_once('/') {
                         let final_destination = folder_path.join(buf);
 
@@ -345,17 +352,17 @@ Existent 'Dots' are gonna be ereased.\n"
                             }
 
                             fs::create_dir_all(&final_destination)
-                                .expect("Couldn't create new 'Dots' in .dothub.");
+                                .expect("Couldn't create new 'Dots' in .dothub .");
 
                             if p.is_file() {
                                 fs::copy(p, final_destination.join(p.file_name().unwrap()))
-                                    .expect("Couldn't copy dot file over to .dothub");
+                                    .expect("Couldn't copy dot file over to .dothub .");
                             } else {
                                 let mut options = fs_extra::dir::CopyOptions::new();
                                 options.content_only = true;
 
                                 fs_extra::dir::copy(p, final_destination, &options)
-                                    .expect("Couldn't copy dot folder over to .dothub");
+                                    .expect("Couldn't copy dot folder over to .dothub .");
                             }
 
                             break;
@@ -375,7 +382,7 @@ Existent 'Dots' are gonna be ereased.\n"
                 let profile = profiles
                     .iter()
                     .find(|dp| &dp.name == to_set)
-                    .expect("DotProfile doesn't exist!");
+                    .context("DotProfile doesn't exist!")?;
 
                 // run profile on_start commands
                 if let Some(start) = &profile.start {
@@ -383,7 +390,7 @@ Existent 'Dots' are gonna be ereased.\n"
                         process::Command::new("/usr/bin/bash")
                             .args(["-c", &cmd])
                             .output()
-                            .expect("Couldn't run command '{cmd}'");
+                            .context("Couldn't run command '{cmd}'")?;
                     }
                 }
 
@@ -392,12 +399,12 @@ Existent 'Dots' are gonna be ereased.\n"
                     let dotfolder_path = folder_path.join(df);
                     let dot_path = dotfolder_path.join(dt);
 
-                    let dotfolder = process_dotfolder(&dotfolder_path);
-                    let dot = process_dot(&dot_path);
-                    let config = get_active_config((&dotfolder, Some(&dot)));
+                    let dotfolder = process_dotfolder(&dotfolder_path)?;
+                    let dot = process_dot(&dot_path)?;
+                    let config = get_active_config((&dotfolder, Some(&dot)))?;
                     let conf_path = Path::new(&config.destination);
 
-                    dot_set(&config, &dot_path, &conf_path);
+                    dot_set(&config, &dot_path, &conf_path)?;
                 }
             }
             Some(("list", _)) => {
@@ -409,9 +416,11 @@ Existent 'Dots' are gonna be ereased.\n"
         },
         _ => unreachable!(),
     }
+
+    Ok(())
 }
 
-fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) {
+fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) -> Result<()> {
     if !conf_path.exists() {
         if let Some(parent_path) = conf_path.parent() {
             if !parent_path.exists() {
@@ -430,11 +439,13 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) {
 
     if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
         match config.reload_on_set {
-            Some(x) if x == true => dot_reload(&config),
-            None => dot_reload(&config),
-            _ => {}
+            Some(x) if x == true => dot_reload(&config)?,
+            None => dot_reload(&config)?,
+            _ => return Ok(()),
         }
     }
+
+    Ok(())
 }
 // run a program, make it a daemon, exit
 fn run(prog: &String) {
@@ -442,10 +453,14 @@ fn run(prog: &String) {
         let _ = exec::Command::new("sh").args(&["-c", prog]).exec();
     }
 }
-fn dot_start(config: &DotConfig) {
+fn dot_start(config: &DotConfig) -> Result<()> {
     if let Some(start_cmd) = &config.start {
         run(start_cmd);
+    } else {
+        bail!("No 'start' command specified in any .dothub .")
     }
+
+    Ok(())
 
     // will keep this here for now..
 
@@ -463,84 +478,95 @@ fn dot_start(config: &DotConfig) {
     //     panic!("No 'start' command specified in any .dothub .");
     // }
 }
-fn dot_kill(config: &DotConfig) {
+fn dot_kill(config: &DotConfig) -> Result<()> {
     if let Some(kill_cmd) = &config.kill {
         process::Command::new("sh")
             .args(["-c", kill_cmd])
             .output()
-            .expect("Couldn't kill Dot");
+            .context("Couldn't kill Dot.")?;
     } else {
-        panic!("No 'kill' command specified in any .dothub .");
+        bail!("No 'kill' command specified in any .dothub .");
     }
+
+    Ok(())
 }
-fn dot_reload(config: &DotConfig) {
+fn dot_reload(config: &DotConfig) -> Result<()> {
     if let Some(reload_cmd) = &config.reload {
         process::Command::new("sh")
             .args(["-c", &reload_cmd])
             .output()
-            .expect("Couldn't reload Dot");
+            .context("Couldn't reload Dot.")?;
     } else if let (Some(start_cmd), Some(kill_cmd)) = (&config.start, &config.kill) {
         process::Command::new("sh")
             .args(["-c", &format!("{} && {}", &kill_cmd, &start_cmd)])
             .output()
-            .expect("Couldn't reload Dot");
+            .context("Couldn't reload Dot.")?;
     } else {
-        panic!("No 'reload' command specified in any .dothub .");
+        bail!("No 'reload' command specified in any .dothub .");
     }
+
+    Ok(())
 }
 
-fn process_dotprofile(path: PathBuf) -> DotProfile {
+fn process_dotprofile(path: PathBuf) -> Result<DotProfile> {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
 
     let profile_contents = fs::read_to_string(&path).expect("Couldn't read DotProfile.");
 
     let parsed: DotProfileParsable =
-        toml::from_str(&profile_contents).expect("Couldn't parse a DotProfile.");
+        toml::from_str(&profile_contents).context("Couldn't parse a DotProfile.")?;
 
-    DotProfile {
+    Ok(DotProfile {
         name,
         start: parsed.start,
         dots: parsed.dots,
-    }
+    })
 }
 
-fn process_dotfolder(path: &PathBuf) -> DotFolder {
+fn process_dotfolder(path: &PathBuf) -> Result<DotFolder> {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let mut config: Option<DotConfig> = None;
 
-    if !path.exists() {
-        panic!("DotFolder '{}' doesn't exist!", name);
-    }
-
     let dots_paths = path.read_dir().unwrap();
-    let dots: Vec<Dot> = dots_paths
+
+    let dots: Result<Vec<Dot>, anyhow::Error> = dots_paths
         .filter_map(|dot_path| {
-            let dot_path = dot_path.expect("Couldn't read Dot.").path();
+            let dot_path = &dot_path.expect("Couldn't read Dot.").path();
             let dot_path_name = dot_path.file_name().unwrap().to_str().unwrap();
 
             if dot_path.is_dir() {
                 return Some(process_dot(&dot_path));
             } else if dot_path.is_file() && dot_path_name == ".dothub" {
+                let user_home = match env::var("HOME").context("No $HOME set!") {
+                    Ok(value) => value,
+                    Err(e) => return Some(Err(e)),
+                };
+
                 let config_file = fs::read_to_string(dot_path)
                     .expect("Couldn't read .dothub .")
-                    .replace("~", &env::var("HOME").expect("No $HOME set!"));
+                    .replace("~", &user_home);
 
-                config = Some(toml::from_str(&config_file).expect("Couldn't parse .dothub ."));
+                let parsed = toml::from_str(&config_file)
+                    .with_context(|| format!("'{}' .dothub couldn't be parsed.", name));
+
+                match parsed {
+                    Ok(conf) => config = Some(conf),
+                    Err(e) => return Some(Err(e)),
+                }
             }
             None
         })
         .collect();
 
-    DotFolder { name, dots, config }
+    match dots {
+        Ok(dots) => Ok(DotFolder { name, dots, config }),
+        Err(e) => Err(e),
+    }
 }
 
-fn process_dot(path: &PathBuf) -> Dot {
+fn process_dot(path: &PathBuf) -> Result<Dot> {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let mut config: Option<DotConfig> = None;
-
-    if !path.exists() {
-        panic!("Dot '{}' doesn't exist!", name);
-    }
 
     let dots_files = path.read_dir().unwrap();
     for dot_path in dots_files {
@@ -548,16 +574,17 @@ fn process_dot(path: &PathBuf) -> Dot {
         let dot_path_name = dot_path.file_name().unwrap().to_str().unwrap();
 
         if dot_path.is_file() && dot_path_name == ".dothub" {
+            let user_home = env::var("HOME").context("No $HOME set!")?;
+
             let config_file = fs::read_to_string(dot_path)
                 .expect("Couldn't read .dothub .")
-                .replace("~", &env::var("HOME").expect("No $HOME set!"));
+                .replace("~", &user_home);
 
-            config = Some(toml::from_str(&config_file).expect("Couldn't parse .dothub ."));
-            break;
+            config = Some(toml::from_str(&config_file).context("Dot .dothub couldn't be parsed")?);
         }
     }
 
-    Dot { name, config }
+    Ok(Dot { name, config })
 }
 
 fn arguments() -> clap::ArgMatches {
