@@ -65,7 +65,7 @@ wofi/
 In `profiles/ocean.toml`:
 ```
 start = [
-  "notify-send 'Profile set!'"
+  "notify-send 'Profile set!'",
   "notify-send 'You are now using profile ~ocean~ :)'"
 ]
 
