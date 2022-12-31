@@ -26,14 +26,14 @@ macro_rules! get_dot_or_df_opt {
 }
 
 #[derive(Debug)]
-struct DotProfile {
+struct Profile {
     name: String,
     start: Option<Vec<String>>,
     dots: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct DotProfileParsable {
+struct ProfileParsable {
     start: Option<Vec<String>>,
     dots: Option<HashMap<String, String>>,
 }
@@ -76,14 +76,14 @@ fn main() -> Result<()> {
         fs::create_dir(profiles_path).context("Couldn't create 'profiles' in your .dothub .")?;
     }
 
-    // go through .dothub/profiles and initialize all DotProfiles
-    let mut profiles: Vec<DotProfile> = vec![];
+    // go through .dothub/profiles and initialize all profiles
+    let mut profiles: Vec<Profile> = vec![];
 
     for profile_file in fs::read_dir(profiles_path).unwrap() {
-        let profile_file = profile_file.expect("Couldn't read DotProfile").path();
+        let profile_file = profile_file.expect("Couldn't read profile").path();
 
         if profile_file.is_file() {
-            profiles.push(process_dotprofile(profile_file)?);
+            profiles.push(process_profile(profile_file)?);
         }
     }
 
@@ -279,12 +279,12 @@ fn main() -> Result<()> {
         }
         Some(("profile", matches)) => match matches.subcommand() {
             Some(("set", pmatches)) => {
-                let to_set = pmatches.get_one::<String>("DotProfile").unwrap();
+                let to_set = pmatches.get_one::<String>("Profile").unwrap();
 
                 let profile = profiles
                     .iter()
                     .find(|dp| &dp.name == to_set)
-                    .context("DotProfile doesn't exist!")?;
+                    .context("Profile doesn't exist!")?;
 
                 // run profile on_start commands
                 if let Some(start) = &profile.start {
@@ -296,7 +296,7 @@ fn main() -> Result<()> {
                     }
                 }
 
-                // set all dots from dotprofile
+                // set all dots from profile
                 if let Some(pdots) = &profile.dots {
                     for (df, dt) in pdots.iter() {
                         let dotfolder_path = folder_path.join(df);
@@ -505,7 +505,7 @@ Existent 'Dots' are gonna be ereased.\n"
     Ok(())
 }
 
-fn process_dotprofile(path: PathBuf) -> Result<DotProfile> {
+fn process_profile(path: PathBuf) -> Result<Profile> {
     let name = path
         .with_extension("")
         .file_name()
@@ -514,12 +514,12 @@ fn process_dotprofile(path: PathBuf) -> Result<DotProfile> {
         .unwrap()
         .to_string();
 
-    let profile_contents = fs::read_to_string(&path).expect("Couldn't read DotProfile.");
+    let profile_contents = fs::read_to_string(&path).expect("Couldn't read profile.");
 
-    let parsed: DotProfileParsable =
-        toml::from_str(&profile_contents).context("Couldn't parse a DotProfile.")?;
+    let parsed: ProfileParsable =
+        toml::from_str(&profile_contents).context("Couldn't parse a profile.")?;
 
-    Ok(DotProfile {
+    Ok(Profile {
         name,
         start: parsed.start,
         dots: parsed.dots,
@@ -664,7 +664,7 @@ fn arguments() -> clap::ArgMatches {
                 .subcommand(
                     Command::new("set")
                         .about("Sets a profile.")
-                        .arg(Arg::new("DotProfile").required(true))
+                        .arg(Arg::new("Profile").required(true))
                 )
                 .subcommand(
                     Command::new("list")
