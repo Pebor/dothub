@@ -20,16 +20,35 @@ All the options are:
 In your DotFolder, you can create more folders (Dots) which will be symlinked to your `destination` on `dothub set`.
 You can have a `.dothub` file inside a Dot, which will be prioritized over your DotFolder's configuration.
 
+Avaiable commands:
+| command | description |
+| --- | --- |
+| set | Applies a dot. |
+| watch | Watches a Dot and reloads on any change. *(basically brings "hot-reload" to any program)* 
+| list | Lists all Dots |
+| start | Runs the Dots 'start' command. |
+| kill | Runs the Dots 'kill' command. |
+| reload | Runs the Dots 'reload' command. If 'reload' isn't specified, it will try to use 'kill' and 'start' as an alternative. |
+| run | Runs a program forked, with a different PID. (doesn't halt the terminal, you can use your WM/Compositor solutions) |
+| edit | Launches $EDITOR with specified Dot. |
+| profile | \*with profile commands, list below |
+
+Profile commands:
+| command | description |
+| --- | --- |
+| set | Applies a profile |
+| list | Lists all profiles |
+
 # Profiles
-With the generation of `.dothub` at your `$HOME`, a folder called `profiles` will also be created, this isn't counted as a DotFolder.
-in your `profiles`, you can have DotProfiles defiend as simple `.toml` files and only two "fields".
+With the generation of `.dothub` in your `$HOME`, a folder called `profiles` will also be created, this isn't counted as a DotFolder.
+In your `profiles`, you can define a profile as a file in `.toml` with two optional "fields".
 | option | type | description |
 | --- | --- | --- |
 | start | array | Array of commands that should be executed on `dothub profile set` |
-| dots | map | A hashmap of `DotFolder = "Dot"`, see example |
+| dots | map | A hashmap of `DotFolder = "Dot"`, see **example** |
 
 # Example
-In .dothub:
+In your `.dothub`:
 ```
 profiles/
   ocean.toml
@@ -54,13 +73,14 @@ start = [
 waybar = "nord"
 wofi = "minimalist"
 ```
-In `waybar/.dothub':
+In `waybar/.dothub`:
 ```
 start = 'dothub run waybar'
 kill = 'pkill waybar'
 destination = '~/.config/waybar'
 ```
 To apply a DotProfile:
-'dothub set profile ocean'
+`dothub profile set ocean`
+
 To apply a Dot:
 `dothub set waybar/neon`
