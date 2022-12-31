@@ -29,13 +29,13 @@ macro_rules! get_dot_or_df_opt {
 struct DotProfile {
     name: String,
     start: Option<Vec<String>>,
-    dots: HashMap<String, String>,
+    dots: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DotProfileParsable {
     start: Option<Vec<String>>,
-    dots: HashMap<String, String>,
+    dots: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug)]
@@ -297,16 +297,20 @@ fn main() -> Result<()> {
                 }
 
                 // set all dots from dotprofile
-                for (df, dt) in profile.dots.iter() {
-                    let dotfolder_path = folder_path.join(df);
-                    let dot_path = dotfolder_path.join(dt);
+                if let Some(pdots) = &profile.dots {
+                    for (df, dt) in pdots.iter() {
+                        let dotfolder_path = folder_path.join(df);
+                        let dot_path = dotfolder_path.join(dt);
 
-                    let dotfolder = process_dotfolder(&dotfolder_path)?;
-                    let dot = process_dot(&dot_path)?;
-                    let config = get_active_config((&dotfolder, Some(&dot)))?;
-                    let conf_path = Path::new(&config.destination);
+                        let dotfolder = process_dotfolder(&dotfolder_path)?;
+                        let dot = process_dot(&dot_path)?;
+                        let config = get_active_config((&dotfolder, Some(&dot)))?;
+                        let conf_path = Path::new(&config.destination);
 
-                    dot_set(&config, &dot_path, &conf_path)?;
+                        dot_set(&config, &dot_path, &conf_path)?;
+                    }
+                } else {
+                    println!("There are no Dots specified in 'dots'!");
                 }
             }
             Some(("list", _)) => {
