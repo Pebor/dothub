@@ -137,7 +137,10 @@ fn main() -> Result<()> {
         let (dotfolder, dot) = dot_info;
 
         if dotfolder.config.is_none() {
-            bail!("DotFolder has to have a .dothub with at least 'destination' filled!");
+            bail!(
+                "DotFolder '{}' is required to have the field 'destination' filled in it's .dothub!",
+                dotfolder.name
+            );
         }
 
         // for the love of god, rewrite this
