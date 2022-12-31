@@ -11,7 +11,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use clap::{Arg, Command};
+use clap::{Arg, ArgMatches, Command};
 use notify::{Config, PollWatcher, Watcher};
 use serde_derive::Deserialize;
 
@@ -273,107 +273,9 @@ fn main() -> Result<()> {
 
             run(prog);
         }
-        // this one is painfull to look at
         Some(("get", matches)) => {
-            // check if all paths given are valid
-            let paths = matches
-                .get_many::<String>("paths")
-                .unwrap()
-                .filter_map(|p| {
-                    let path = Path::new(p);
-                    if !path.exists() {
-                        println!("'{}' doesn't exist!", p);
-                        None
-                    } else {
-                        Some(path)
-                    }
-                });
-
-            println!(
-                "For every path, input it's location in your .dothub. Example: 'polybar/red_one'.
-Nonexsitent folders are gonna be created.
-Existent 'Dots' are gonna be ereased.\n"
-            );
-
-            // for each path arg, input it's .dothub location
-            paths.for_each(|p| {
-                let mut buf = "".to_string();
-
-                'main: loop {
-                    print!("'{}': ", p.to_str().unwrap());
-
-                    buf.clear();
-                    io::stdout()
-                        .flush()
-                        .expect("Flush broken, try a different toilet.");
-                    io::stdin()
-                        .read_line(&mut buf)
-                        .expect("Reading from stdin failed.");
-
-                    // trim the leading '\n'
-                    let buf = buf.trim();
-
-                    // this shit is unreadable
-                    if let Some((_, d)) = buf.split_once('/') {
-                        let final_destination = folder_path.join(buf);
-
-                        if !d.is_empty() {
-                            if final_destination.exists() {
-                                let mut user_choice = "".to_string();
-
-                                loop {
-                                    print!(
-                                        "'{}' already exists, do you want to replace it? [y/n]: ",
-                                        buf
-                                    );
-
-                                    user_choice.clear();
-                                    io::stdout()
-                                        .flush()
-                                        .expect("Flush broken, try a different toilet.");
-                                    io::stdin()
-                                        .read_line(&mut user_choice)
-                                        .expect("Reading from stdin failed.");
-
-                                    if let Some(choice) = user_choice.to_lowercase().chars().nth(0)
-                                    {
-                                        match choice {
-                                            'y' => {
-                                                fs::remove_dir_all(&final_destination).unwrap();
-                                                break;
-                                            }
-                                            'n' => {
-                                                break 'main;
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                            }
-
-                            fs::create_dir_all(&final_destination)
-                                .expect("Couldn't create new 'Dots' in .dothub .");
-
-                            if p.is_file() {
-                                fs::copy(p, final_destination.join(p.file_name().unwrap()))
-                                    .expect("Couldn't copy dot file over to .dothub .");
-                            } else {
-                                let mut options = fs_extra::dir::CopyOptions::new();
-                                options.content_only = true;
-
-                                fs_extra::dir::copy(p, final_destination, &options)
-                                    .expect("Couldn't copy dot folder over to .dothub .");
-                            }
-
-                            break;
-                        } else {
-                            println!("You have to input the 'Dot'.");
-                        }
-                    } else {
-                        println!("The format is 'DotFolder/Dot'");
-                    }
-                }
-            });
+            // ew, only temporary I hope
+            dot_get(&matches, &folder_path)?;
         }
         Some(("profile", matches)) => match matches.subcommand() {
             Some(("set", pmatches)) => {
@@ -437,6 +339,8 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) -> Result<()> 
 
     symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
 
+    // if 'reload' exists or both 'start' and 'kill' are specified, we can reload
+    // only if 'reload_on_set' is set to 'true', which is the default value.
     if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
         match config.reload_on_set {
             Some(x) if x == true => dot_reload(&config)?,
@@ -447,12 +351,14 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) -> Result<()> 
 
     Ok(())
 }
+
 // run a program, make it a daemon, exit
 fn run(prog: &String) {
     if let Ok(Fork::Child) = daemon(false, false) {
         let _ = exec::Command::new("sh").args(&["-c", prog]).exec();
     }
 }
+
 fn dot_start(config: &DotConfig) -> Result<()> {
     if let Some(start_cmd) = &config.start {
         run(start_cmd);
@@ -461,23 +367,8 @@ fn dot_start(config: &DotConfig) -> Result<()> {
     }
 
     Ok(())
-
-    // will keep this here for now..
-
-    //     match unsafe { fork() } {
-    //         Ok(ForkResult::Parent { child: _ }) => {
-    //             exit(0);
-    //         }
-    //         Ok(ForkResult::Child) => {
-    //             setsid().unwrap();
-    //             exec::Command::new("sh").args(&["-c", start_cmd]).exec();
-    //         }
-    //         Err(e) => panic!("Couldn't fork."),
-    //     }
-    // } else {
-    //     panic!("No 'start' command specified in any .dothub .");
-    // }
 }
+
 fn dot_kill(config: &DotConfig) -> Result<()> {
     if let Some(kill_cmd) = &config.kill {
         process::Command::new("sh")
@@ -490,6 +381,7 @@ fn dot_kill(config: &DotConfig) -> Result<()> {
 
     Ok(())
 }
+
 fn dot_reload(config: &DotConfig) -> Result<()> {
     if let Some(reload_cmd) = &config.reload {
         process::Command::new("sh")
@@ -508,8 +400,115 @@ fn dot_reload(config: &DotConfig) -> Result<()> {
     Ok(())
 }
 
+fn dot_get(matches: &ArgMatches, folder_path: &Path) -> Result<()> {
+    // check if all paths given are valid
+    let paths = matches
+        .get_many::<String>("paths")
+        .unwrap()
+        .filter_map(|p| {
+            let path = Path::new(p);
+            if !path.exists() {
+                println!("'{}' doesn't exist!", p);
+                None
+            } else {
+                Some(path)
+            }
+        });
+
+    println!(
+        "For every path, input it's location in your .dothub. Example: 'polybar/red_one'.
+Nonexsitent folders are gonna be created.
+Existent 'Dots' are gonna be ereased.\n"
+    );
+
+    // helper function, i am lazy, I miss Python
+    let input = |msg: &str| -> String {
+        println!("{msg}");
+
+        let mut buf = "".to_string();
+
+        io::stdout()
+            .flush()
+            .expect("Flush broken, try a different toilet.");
+        io::stdin()
+            .read_line(&mut buf)
+            .expect("Reading from stdin failed.");
+
+        buf
+    };
+
+    // for each path arg, input it's .dothub location
+    paths.for_each(|p| {
+        'main: loop {
+            let location = input(&format!("'{}': ", p.to_str().unwrap()));
+
+            // trim the leading '\n'
+            let location = location.trim();
+
+            // Dotfolder/Dot parsing
+            if let Some((_, d)) = location.split_once('/') {
+                let final_destination = folder_path.join(location);
+
+                if d.is_empty() {
+                    println!("You have to input the 'Dot'.");
+                    continue;
+                }
+
+                // if the destination in .dothub already exists, ask if it should be overwritten
+                if final_destination.exists() {
+                    loop {
+                        let user_choice = input(&format!(
+                            "'{}' already exists, do you want to replace it? [y/n]: ",
+                            location
+                        ));
+
+                        if let Some(choice) = user_choice.to_lowercase().chars().nth(0) {
+                            match choice {
+                                'y' => {
+                                    fs::remove_dir_all(&final_destination).unwrap();
+                                    break;
+                                }
+                                'n' => {
+                                    break 'main;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                } else {
+                    fs::create_dir_all(&final_destination)
+                        .expect("Couldn't create a new 'Dot' in your .dothub .");
+                }
+
+                if p.is_file() {
+                    fs::copy(p, final_destination.join(p.file_name().unwrap()))
+                        .expect("Couldn't copy dot file over to your .dothub .");
+                } else {
+                    let mut options = fs_extra::dir::CopyOptions::new();
+                    options.content_only = true;
+
+                    fs_extra::dir::copy(p, final_destination, &options)
+                        .expect("Couldn't copy dot folder over to your .dothub .");
+                }
+
+                break;
+            } else {
+                println!("The format is 'DotFolder/Dot'");
+            }
+        }
+    });
+
+    Ok(())
+}
+
 fn process_dotprofile(path: PathBuf) -> Result<DotProfile> {
-    let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+    let name = path
+        .with_extension("")
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let profile_contents = fs::read_to_string(&path).expect("Couldn't read DotProfile.");
 
@@ -609,22 +608,28 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("list")
-                .about("Lists all the avaiable Dots.")   
+                .about("Lists all Dots.")   
         )
         .subcommand(
             Command::new("start")
                 .about("Runs the 'start' command. DotFolder config used if Dot isn't specified, or there is no Dot config")
-                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
+                .arg(Arg::new("location")
+                    .help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.")
+                    .required(true))
         )
         .subcommand(
             Command::new("kill")
                 .about("Runs the 'kill' command. DotFolder config used if Dot isn't specified, or there is no Dot config")
-                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
+                .arg(Arg::new("location")
+                    .help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.")
+                    .required(true))
         )
         .subcommand(
             Command::new("reload")
                 .about("Runs the 'reload' command. DotFolder config used if Dot isn't specified, or there is no Dot config")
-                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
+                .arg(Arg::new("location")
+                    .help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.")
+                    .required(true))
         )
         .subcommand(
             Command::new("run")
@@ -634,7 +639,9 @@ fn arguments() -> clap::ArgMatches {
         .subcommand(
             Command::new("edit")
                 .about("Edits a Dot with your $EDITOR.")
-                .arg(Arg::new("location").help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.").required(true))
+                .arg(Arg::new("location")
+                    .help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.")
+                    .required(true))
         )
         .subcommand(
             Command::new("get")
@@ -645,10 +652,6 @@ fn arguments() -> clap::ArgMatches {
                     .num_args(0..)
                 )
         )
-        // .subcommand(
-        //     Command::new("get")
-        //         .about("'Gets' a local/git folder.")
-        // )
         .subcommand(
             Command::new("profile")
                 .about("Profiles")
@@ -661,10 +664,8 @@ fn arguments() -> clap::ArgMatches {
                 )
                 .subcommand(
                     Command::new("list")
+                        .about("Lists all DotProfiles.")
                 )
-                // .subcommand(
-                //     Command::new("create_from_current")
-                // )
         )
         .get_matches()
 }
