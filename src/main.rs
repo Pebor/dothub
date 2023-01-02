@@ -615,7 +615,7 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("list")
-                .about("Lists all Dots.")   
+                .about("Lists all Dots.")
         )
         .subcommand(
             Command::new("start")
