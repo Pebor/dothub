@@ -139,7 +139,7 @@ fn main() -> Result<()> {
         if dotfolder.config.is_none() {
             bail!(
                 "DotFolder '{}' is required to have the field 'destination' filled in it's .dothub!",
-                dotfolder.name
+                &dotfolder.name
             );
         }
 
@@ -206,6 +206,13 @@ fn main() -> Result<()> {
                     dotfolder.name,
                     dot.name
                 );
+
+                println!(
+                    "You are now watching for changes in '{}'.
+Once a change is detected (for example, edits), your Dot will be automaticly reloaded.",
+                    &dot_path
+                );
+
                 let dot_path = Path::new(&dot_path);
 
                 dot_set(&config, &dot_path, &conf_path)?;
@@ -265,11 +272,6 @@ fn main() -> Result<()> {
             )?)?;
 
             dot_reload(&config)?;
-        }
-        Some(("edit", _)) => {
-            let editor = env::var("EDITOR").context("$EDITOR has to be set!")?;
-
-            run(&editor);
         }
         Some(("run", matches)) => {
             let prog = matches.get_one("Program").unwrap();
@@ -642,13 +644,6 @@ fn arguments() -> clap::ArgMatches {
             Command::new("run")
                 .about("Runs a program, forked, with a different PID.")
                 .arg(Arg::new("Program").required(true))
-        )
-        .subcommand(
-            Command::new("edit")
-                .about("Edits a Dot with your $EDITOR.")
-                .arg(Arg::new("location")
-                    .help("DotFolder/<Dot>, DotFolder has to be present but Dot can be not specified. Example 'waybar', or 'waybar/neon'.")
-                    .required(true))
         )
         .subcommand(
             Command::new("get")
