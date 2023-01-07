@@ -1,4 +1,3 @@
-use exec;
 use fork::{daemon, Fork};
 use std::{
     collections::HashMap,
@@ -14,16 +13,6 @@ use anyhow::{bail, Context, Result};
 use clap::{Arg, ArgMatches, Command};
 use notify::{Config, PollWatcher, Watcher};
 use serde_derive::Deserialize;
-
-macro_rules! get_dot_or_df_opt {
-    ($dot_conf:ident,$df_conf:ident,$var:ident) => {
-        if let Some(x) = &$dot_conf.$var {
-            Some(x.clone())
-        } else {
-            $df_conf.$var.clone()
-        }
-    };
-}
 
 #[derive(Debug)]
 struct Profile {
@@ -63,7 +52,7 @@ struct DotConfig {
 fn main() -> Result<()> {
     // check if $HOME/.dothub exists, if not, create one
     let user_home = env::var("HOME").context("No $HOME set!")?;
-    let folder_path = user_home.clone() + "/.dothub";
+    let folder_path = user_home + "/.dothub";
     let folder_path = Path::new(&folder_path);
 
     if !folder_path.exists() {
@@ -117,14 +106,14 @@ fn main() -> Result<()> {
 
         let dotfolder = dot_folders
             .iter()
-            .find(|df| &df.name == dotfolder_arg)
+            .find(|df| df.name == dotfolder_arg)
             .with_context(|| format!("No Dotfolder named '{}'", &dotfolder_arg))?;
 
         if let Some(dot_arg) = dot_arg {
             let dot = dotfolder
                 .dots
                 .iter()
-                .find(|d| &d.name == dot_arg)
+                .find(|d| d.name == dot_arg)
                 .with_context(|| format!("No Dot named '{}'", &dot_arg))?;
 
             return Ok((dotfolder, Some(dot)));
@@ -145,15 +134,15 @@ fn main() -> Result<()> {
 
         // for the love of god, rewrite this
         // also two structs dotFolderConfig, dotConfig, dumbass
-        if let Some(dot) = dot {
+        if let Some(dot) = &dot {
             if let Some(config) = &dot.config {
                 // merge
                 let df_config = dotfolder.config.as_ref().unwrap();
 
-                Ok(DotConfig {
-                    start: { get_dot_or_df_opt!(config, df_config, start) },
-                    kill: { get_dot_or_df_opt!(config, df_config, kill) },
-                    reload: { get_dot_or_df_opt!(config, df_config, reload) },
+                return Ok(DotConfig {
+                    start: { config.start.clone().or(df_config.start.clone()) },
+                    kill: { config.kill.clone().or(df_config.kill.clone()) },
+                    reload: { config.reload.clone().or(df_config.reload.clone()) },
                     destination: {
                         if config.destination.is_empty() {
                             df_config.destination.clone()
@@ -161,14 +150,13 @@ fn main() -> Result<()> {
                             config.destination.clone()
                         }
                     },
-                    reload_on_set: { get_dot_or_df_opt!(config, df_config, reload_on_set) },
-                })
-            } else {
-                Ok(dotfolder.config.as_ref().expect("yes").clone())
+                    // cargo fmt you suck :(
+                    reload_on_set: { config.reload_on_set.or(df_config.reload_on_set) },
+                });
             }
-        } else {
-            Ok(dotfolder.config.as_ref().expect("yes").clone())
         }
+
+        Ok(dotfolder.config.as_ref().unwrap().clone())
     };
 
     // commands
@@ -177,7 +165,7 @@ fn main() -> Result<()> {
     match args.subcommand() {
         Some(("set", set_matches)) => {
             let (dotfolder, dot) =
-                get_dot_info_from_arg(&set_matches.get_one::<String>("location").unwrap())?;
+                get_dot_info_from_arg(set_matches.get_one::<String>("location").unwrap())?;
             let config = get_active_config((dotfolder, dot))?;
             let dot = dot.unwrap();
 
@@ -190,15 +178,15 @@ fn main() -> Result<()> {
             );
             let dot_path = Path::new(&dot_path);
 
-            dot_set(&config, &dot_path, &conf_path)?;
+            dot_set(&config, dot_path, conf_path)?;
         }
         Some(("watch", set_matches)) => {
             let (dotfolder, dot) =
-                get_dot_info_from_arg(&set_matches.get_one::<String>("location").unwrap())?;
+                get_dot_info_from_arg(set_matches.get_one::<String>("location").unwrap())?;
             let config = get_active_config((dotfolder, dot))?;
             let dot = dot.unwrap();
 
-            if let Some(_) = &dotfolder.config {
+            if dotfolder.config.is_some() {
                 let conf_path = Path::new(&config.destination);
                 let dot_path = format!(
                     "{}/{}/{}",
@@ -215,7 +203,7 @@ Once a change is detected (for example, edits), your Dot will be automaticly rel
 
                 let dot_path = Path::new(&dot_path);
 
-                dot_set(&config, &dot_path, &conf_path)?;
+                dot_set(&config, dot_path, conf_path)?;
 
                 // watch for directory changes (writes, moves, etc..)
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -227,7 +215,7 @@ Once a change is detected (for example, edits), your Dot will be automaticly rel
                 .expect("Couldn't create watcher");
 
                 watcher
-                    .watch(&dot_path, notify::RecursiveMode::Recursive)
+                    .watch(dot_path, notify::RecursiveMode::Recursive)
                     .expect("Couldn't add Dot path to watcher.");
 
                 for res in rx {
@@ -248,27 +236,27 @@ Once a change is detected (for example, edits), your Dot will be automaticly rel
             for df in dot_folders {
                 println!("{}/", df.name);
                 for d in df.dots {
-                    println!("\t{}", d.name);
+                    println!("  {}", d.name);
                 }
             }
         }
         Some(("start", matches)) => {
             let config = get_active_config(get_dot_info_from_arg(
-                &matches.get_one::<String>("location").unwrap(),
+                matches.get_one::<String>("location").unwrap(),
             )?)?;
 
             dot_start(&config)?;
         }
         Some(("kill", matches)) => {
             let config = get_active_config(get_dot_info_from_arg(
-                &matches.get_one::<String>("location").unwrap(),
+                matches.get_one::<String>("location").unwrap(),
             )?)?;
 
             dot_kill(&config)?;
         }
         Some(("reload", matches)) => {
             let config = get_active_config(get_dot_info_from_arg(
-                &matches.get_one::<String>("location").unwrap(),
+                matches.get_one::<String>("location").unwrap(),
             )?)?;
 
             dot_reload(&config)?;
@@ -280,7 +268,7 @@ Once a change is detected (for example, edits), your Dot will be automaticly rel
         }
         Some(("get", matches)) => {
             // ew, only temporary I hope
-            dot_get(&matches, &folder_path)?;
+            dot_get(matches, folder_path)?;
         }
         Some(("profile", matches)) => match matches.subcommand() {
             Some(("set", pmatches)) => {
@@ -294,8 +282,8 @@ Once a change is detected (for example, edits), your Dot will be automaticly rel
                 // run profile on_start commands
                 if let Some(start) = &profile.start {
                     for cmd in start {
-                        process::Command::new("/usr/bin/bash")
-                            .args(["-c", &cmd])
+                        process::Command::new("sh")
+                            .args(["-c", cmd])
                             .output()
                             .context("Couldn't run command '{cmd}'")?;
                     }
@@ -312,7 +300,7 @@ Once a change is detected (for example, edits), your Dot will be automaticly rel
                         let config = get_active_config((&dotfolder, Some(&dot)))?;
                         let conf_path = Path::new(&config.destination);
 
-                        dot_set(&config, &dot_path, &conf_path)?;
+                        dot_set(&config, &dot_path, conf_path)?;
                     }
                 } else {
                     println!("There are no Dots specified in 'dots'!");
@@ -352,8 +340,8 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) -> Result<()> 
     // only if 'reload_on_set' is set to 'true', which is the default value.
     if config.reload.is_some() || (config.start.is_some() && config.kill.is_some()) {
         match config.reload_on_set {
-            Some(x) if x == true => dot_reload(&config)?,
-            None => dot_reload(&config)?,
+            Some(x) if x => dot_reload(config)?,
+            None => dot_reload(config)?,
             _ => return Ok(()),
         }
     }
@@ -394,7 +382,7 @@ fn dot_kill(config: &DotConfig) -> Result<()> {
 fn dot_reload(config: &DotConfig) -> Result<()> {
     if let Some(reload_cmd) = &config.reload {
         process::Command::new("sh")
-            .args(["-c", &reload_cmd])
+            .args(["-c", reload_cmd])
             .output()
             .context("Couldn't reload Dot.")?;
     } else if let (Some(start_cmd), Some(kill_cmd)) = (&config.start, &config.kill) {
@@ -471,7 +459,7 @@ Existent 'Dots' are gonna be ereased.\n"
                             location
                         ));
 
-                        if let Some(choice) = user_choice.to_lowercase().chars().nth(0) {
+                        if let Some(choice) = user_choice.to_lowercase().chars().next() {
                             match choice {
                                 'y' => {
                                     fs::remove_dir_all(&final_destination).unwrap();
@@ -531,7 +519,7 @@ fn process_profile(path: PathBuf) -> Result<Profile> {
     })
 }
 
-fn process_dotfolder(path: &PathBuf) -> Result<DotFolder> {
+fn process_dotfolder(path: &Path) -> Result<DotFolder> {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let mut config: Option<DotConfig> = None;
 
@@ -543,7 +531,7 @@ fn process_dotfolder(path: &PathBuf) -> Result<DotFolder> {
             let dot_path_name = dot_path.file_name().unwrap().to_str().unwrap();
 
             if dot_path.is_dir() {
-                return Some(process_dot(&dot_path));
+                return Some(process_dot(dot_path));
             } else if dot_path.is_file() && dot_path_name == ".dothub" {
                 let user_home = match env::var("HOME").context("No $HOME set!") {
                     Ok(value) => value,
@@ -552,7 +540,7 @@ fn process_dotfolder(path: &PathBuf) -> Result<DotFolder> {
 
                 let config_file = fs::read_to_string(dot_path)
                     .expect("Couldn't read .dothub .")
-                    .replace("~", &user_home);
+                    .replace('~', &user_home);
 
                 let parsed = toml::from_str(&config_file)
                     .with_context(|| format!("'{}' .dothub couldn't be parsed.", name));
@@ -572,7 +560,7 @@ fn process_dotfolder(path: &PathBuf) -> Result<DotFolder> {
     }
 }
 
-fn process_dot(path: &PathBuf) -> Result<Dot> {
+fn process_dot(path: &Path) -> Result<Dot> {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let mut config: Option<DotConfig> = None;
 
@@ -586,7 +574,7 @@ fn process_dot(path: &PathBuf) -> Result<Dot> {
 
             let config_file = fs::read_to_string(dot_path)
                 .expect("Couldn't read .dothub .")
-                .replace("~", &user_home);
+                .replace('~', &user_home);
 
             config = Some(toml::from_str(&config_file).context("Dot .dothub couldn't be parsed")?);
         }
