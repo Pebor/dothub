@@ -125,38 +125,36 @@ fn main() -> Result<()> {
     let get_active_config = |dot_info: (&DotFolder, Option<&Dot>)| -> Result<DotConfig> {
         let (dotfolder, dot) = dot_info;
 
-        if dotfolder.config.is_none() {
-            bail!(
-                "DotFolder '{}' is required to have the field 'destination' filled in it's .dothub!",
-                &dotfolder.name
-            );
-        }
+        let df_config = match dotfolder.config.clone() {
+            Some(x) => x,
+            None => {
+                bail!(
+                    "DotFolder '{}' is required to have the field 'destination' filled in it's .dothub!",
+                    &dotfolder.name
+                );
+            }
+        };
 
-        // for the love of god, rewrite this
-        // also two structs dotFolderConfig, dotConfig, dumbass
-        if let Some(dot) = &dot {
-            if let Some(config) = &dot.config {
+        if let Some(dot) = dot {
+            if let Some(config) = dot.config.clone() {
                 // merge
-                let df_config = dotfolder.config.as_ref().unwrap();
-
                 return Ok(DotConfig {
-                    start: { config.start.clone().or(df_config.start.clone()) },
-                    kill: { config.kill.clone().or(df_config.kill.clone()) },
-                    reload: { config.reload.clone().or(df_config.reload.clone()) },
+                    start: config.start.or(df_config.start),
+                    kill: config.kill.or(df_config.kill),
+                    reload: config.reload.or(df_config.reload),
                     destination: {
                         if config.destination.is_empty() {
-                            df_config.destination.clone()
+                            df_config.destination
                         } else {
-                            config.destination.clone()
+                            config.destination
                         }
                     },
-                    // cargo fmt you suck :(
-                    reload_on_set: { config.reload_on_set.or(df_config.reload_on_set) },
+                    reload_on_set: config.reload_on_set.or(df_config.reload_on_set),
                 });
             }
         }
 
-        Ok(dotfolder.config.as_ref().unwrap().clone())
+        Ok(df_config)
     };
 
     // commands
@@ -329,7 +327,7 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) -> Result<()> 
     }
 
     if conf_path.is_file() {
-        fs::remove_file(conf_path).expect("Couldn't remove old dot file.");
+        fs::remove_file(conf_path).expect("Coudln't remove old dot file.");
     } else if conf_path.is_dir() {
         fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
     }
@@ -414,8 +412,8 @@ fn dot_get(matches: &ArgMatches, folder_path: &Path) -> Result<()> {
 
     println!(
         "For every path, input it's location in your .dothub. Example: 'polybar/red_one'.
-Nonexistent folders are gonna be created.
-Existent 'Dots' are gonna be erased.\n"
+Nonexsitent folders are gonna be created.
+Existent 'Dots' are gonna be ereased.\n"
     );
 
     // helper function, i am lazy, I miss Python
@@ -605,7 +603,7 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("list")
-                .about("Lists all Dots.")
+                .about("Lists all Dots.")   
         )
         .subcommand(
             Command::new("start")
@@ -635,7 +633,7 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("get")
-                .about("Get your existing dotfiles into your .dothub. Input multiple relative or absolute paths, you'll give them all .dothub locations separately.")
+                .about("Get your existing dotfiles into your .dothub. Input multiple relative or absolute paths, you'll give them all .dothub locations seperatly.")
                 .arg(Arg::new("paths")
                     .help("Relative or absolute paths to your existing dot files.")
                     .required(true)
