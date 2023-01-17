@@ -195,7 +195,7 @@ fn main() -> Result<()> {
 
                 println!(
                     "You are now watching for changes in '{}'.
-Once a change is detected (for example, edits), your Dot will be automaticly reloaded.",
+Once a change is detected (for example, edits), your Dot will be automatically reloaded.",
                     &dot_path
                 );
 
@@ -327,7 +327,7 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) -> Result<()> 
     }
 
     if conf_path.is_file() {
-        fs::remove_file(conf_path).expect("Coudln't remove old dot file.");
+        fs::remove_file(conf_path).expect("Couldn't remove old dot file.");
     } else if conf_path.is_dir() {
         fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
     }
@@ -412,8 +412,8 @@ fn dot_get(matches: &ArgMatches, folder_path: &Path) -> Result<()> {
 
     println!(
         "For every path, input it's location in your .dothub. Example: 'polybar/red_one'.
-Nonexsitent folders are gonna be created.
-Existent 'Dots' are gonna be ereased.\n"
+Nonexistent folders are gonna be created.
+Existent 'Dots' are gonna be erased.\n"
     );
 
     // helper function, i am lazy, I miss Python
@@ -603,7 +603,7 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("list")
-                .about("Lists all Dots.")   
+                .about("Lists all Dots.")
         )
         .subcommand(
             Command::new("start")
@@ -633,7 +633,7 @@ fn arguments() -> clap::ArgMatches {
         )
         .subcommand(
             Command::new("get")
-                .about("Get your existing dotfiles into your .dothub. Input multiple relative or absolute paths, you'll give them all .dothub locations seperatly.")
+                .about("Get your existing dotfiles into your .dothub. Input multiple relative or absolute paths, you'll give them all .dothub locations separately.")
                 .arg(Arg::new("paths")
                     .help("Relative or absolute paths to your existing dot files.")
                     .required(true)
