@@ -47,6 +47,7 @@ struct DotConfig {
     reload: Option<String>,
     destination: String,
     reload_on_set: Option<bool>,
+    find_and_replace: Option<bool>,
 }
 
 fn main() -> Result<()> {
@@ -150,6 +151,7 @@ fn main() -> Result<()> {
                         }
                     },
                     reload_on_set: config.reload_on_set.or(df_config.reload_on_set),
+                    find_and_replace: config.find_and_replace.or(df_config.find_and_replace),
                 });
             }
         }
@@ -326,13 +328,29 @@ fn dot_set(config: &DotConfig, dot_path: &Path, conf_path: &Path) -> Result<()> 
         }
     }
 
-    if conf_path.is_file() {
-        fs::remove_file(conf_path).expect("Couldn't remove old dot file.");
-    } else if conf_path.is_dir() {
-        fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
-    }
+    match config.find_and_replace {
+        Some(value) if value => fs::read_dir(dot_path).unwrap().for_each(|item| {
+            let item = item.expect("Couldn't read destination.").path();
+            let destination = conf_path.join(item.file_name().unwrap());
 
-    symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
+            if item.is_file() {
+                fs::remove_file(&destination).expect("Couldn't remove old dot file.");
+            } else if item.is_dir() {
+                fs::remove_dir_all(&destination).expect("Couldn't remove the old Dot folder.");
+            }
+
+            symlink(item, destination).expect("Couldn't create a symlink");
+        }),
+        _ => {
+            if conf_path.is_file() {
+                fs::remove_file(conf_path).expect("Couldn't remove old dot file.");
+            } else if conf_path.is_dir() {
+                fs::remove_dir_all(conf_path).expect("Couldn't remove the old Dot folder.");
+            }
+
+            symlink(dot_path, conf_path).expect("Couldn't create a symlink.");
+        }
+    }
 
     // if 'reload' exists or both 'start' and 'kill' are specified, we can reload
     // only if 'reload_on_set' is set to 'true', which is the default value.

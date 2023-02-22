@@ -16,6 +16,7 @@ All the options are:
 | reload | String | Command to reaload the program. By default uses `kill` + `start` commands |
 | destination | String | **REQUIRED** Destination of the dotfile folder |
 | reload_on_set | Bool | If the program should restart after setting a new Dot. Default is **true** |
+| find_and_replace | Bool | Finds the same named files/directories inside `destination` and replaces only those. Useful for changing only some files and directories inside a bigger folder, eg. `~/home` or `~/.config`. Default is **false** |
 
 In your DotFolder, you can create more folders (Dots) which will be symlinked to your `destination` on `dothub set`.
 You can have a `.dothub` file inside a Dot, which will be prioritized over your DotFolder's configuration.
